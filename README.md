@@ -2,7 +2,7 @@
 
 A minimal, keyboard-driven tiling companion for macOS. Built from scratch in Swift with zero third-party dependencies.
 
-**Status: local foundation prototype. This is not yet a working window manager.** The name is provisional; availability and trademarks have not been checked. No repository has been published.
+**Status: local foundation prototype. This is not yet a working window manager.** The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
 
 The goal is a small tool that arranges ordinary windows predictably, responds quickly to commands, and yields gracefully when macOS or an application cannot cooperate. One menu-bar app, public APIs, SIP enabled, no external services.
 
@@ -55,4 +55,4 @@ docs/                   Product, architecture, decisions, and research
 
 ## Open-source direction
 
-Develop locally, prove the workflow, then prepare a public repository. MIT is the proposed license, but no license is granted yet: ownership, license selection, name, and distribution identity must be settled before publication. No upstream source has been copied into this scaffold. See [inspirations](docs/inspirations.md) for attribution and future source-review rules.
+Develop locally and prove the workflow, with source hosted on GitHub for review. MIT is the proposed license, but no license is granted yet: ownership, license selection, name, and distribution identity must be settled before publication. No upstream source has been copied into this scaffold. See [inspirations](docs/inspirations.md) for attribution and future source-review rules.
