@@ -46,7 +46,10 @@ docs/                   Product, architecture, decisions, and research
 
 - [Product design](docs/design.md)
 - [Architecture](docs/architecture.md)
-- [Decisions](docs/decisions/0001-foundation.md)
+- [Foundation decisions](docs/decisions/0001-foundation.md)
+- [Second-pass review](docs/review-2026-10-02.md)
+- [Control contracts](docs/control-contracts.md)
+- [Read-only feasibility experiments](docs/platform-experiments.md)
 - [Inspirations and source references](docs/inspirations.md)
 - [Roadmap](docs/roadmap.md)
 - [Testing and measurement](docs/testing.md)
@@ -55,4 +58,4 @@ docs/                   Product, architecture, decisions, and research
 
 ## Open-source direction
 
-Develop locally and prove the workflow, with source hosted on GitHub for review. MIT is the proposed license, but no license is granted yet: ownership, license selection, name, and distribution identity must be settled before publication. No upstream source has been copied into this scaffold. See [inspirations](docs/inspirations.md) for attribution and future source-review rules.
+Develop locally and prove the workflow, with source hosted on GitHub for review. The code and documentation are licensed under the [MIT License](LICENSE), copyright 2026 Sergio Gallegos. The final name and distribution identity remain provisional. No upstream source has been copied into this scaffold. See [inspirations](docs/inspirations.md) for attribution and future source-review rules.

@@ -1,13 +1,41 @@
 {
   "schemaVersion": 1,
-  "startPaused": true,
-  "layout": { "innerGap": 8, "outerGap": 8 },
-  "bindings": {
-    "ctrl+alt+return": "tile",
-    "ctrl+alt+h": "focus-left",
-    "ctrl+alt+j": "focus-down",
-    "ctrl+alt+k": "focus-up",
-    "ctrl+alt+l": "focus-right",
-    "ctrl+alt+escape": "pause"
-  }
+  "layout": {
+    "innerGap": 8,
+    "outerGap": 8
+  },
+  "keyboard": {
+    "enabled": false,
+    "keyMapping": "physical-us"
+  },
+  "bindings": [
+    {
+      "chord": "ctrl+shift+return",
+      "command": "tile"
+    },
+    {
+      "chord": "ctrl+shift+e",
+      "command": "enroll-focused"
+    },
+    {
+      "chord": "ctrl+shift+h",
+      "command": "focus-left"
+    },
+    {
+      "chord": "ctrl+shift+j",
+      "command": "focus-down"
+    },
+    {
+      "chord": "ctrl+shift+k",
+      "command": "focus-up"
+    },
+    {
+      "chord": "ctrl+shift+l",
+      "command": "focus-right"
+    },
+    {
+      "chord": "ctrl+shift+escape",
+      "command": "pause"
+    }
+  ]
 }

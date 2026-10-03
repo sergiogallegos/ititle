@@ -16,7 +16,8 @@ We want i3-inspired keyboard tiling on macOS with minimal maintenance and a poss
 - Binary split geometry first; app workers and serialized coordination later.
 - Current-desktop explicit tiling before automatic tiling or workspace emulation.
 - No custom UI renderer, decorations, networking, updater, plugin system, or CLI in the first milestone.
-- iTile is provisional. Publication, final license, and signing identity remain separate decisions.
+- iTile is provisional. Signing identity and release distribution remain separate decisions. The repository is now hosted on GitHub; MIT was selected by the owner on 2026-10-02.
+- [ADR 0002](0002-control-boundary.md) refines the control, enrollment, and keyboard decisions after the second-pass review.
 
 ## Alternatives considered
 

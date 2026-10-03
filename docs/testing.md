@@ -32,3 +32,11 @@ Use exact macOS build, hardware, app versions, monitor topology, and configurati
 ## Performance protocol (not yet executed)
 
 Release builds; 2, 10, and 20 windows; warm and cold runs; separate focus, resize, and lifecycle bursts. Report p50/p95/p99 internal planning time, AX request duration, observed completion, idle CPU, and memory trend. Run a controlled unresponsive-app case. A target of p95 <5 ms for internal planning excludes external app/WindowServer delay. Observe settled geometry as an approximation; it is not a measurement of physical display scanout.
+
+## Second-pass acceptance additions
+
+Before frame mutation, execute P1–P4 in [platform experiments](platform-experiments.md) and record real results. Test pause between two setters, stale completion after pause/epoch change, app termination/PID reuse, and overflow requiring reconciliation. Assert no new admissions after pause, not the impossible guarantee that an already admitted IPC call cannot finish.
+
+Test ordered resize/focus/swap commands separately from coalesced absolute frame targets. Exercise finite bounds/depth limits, rounding, outer gaps, leaf removal, constraint rejection, and deterministic directional focus. Config tests must cover unknown fields/commands, normalized duplicate chords in the bindings list, malformed reload retention, and disabled keyboard defaults. Input tests cover balanced down/up handling and queue rejection passing events through.
+
+These are planned tests; the four existing geometry cases do not cover them.

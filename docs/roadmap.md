@@ -8,15 +8,15 @@
 
 ## M1 — Read-only platform probe
 
-Implement permission onboarding and per-application discovery. List redacted window tokens, roles, supported operations, and display geometry through an explicit diagnostic command. Prove identity survives title changes and rejects stale handles after destruction. Validate visible-window membership before any mutation.
+Implement permission onboarding and per-application discovery. List redacted window tokens, roles, supported operations, and display geometry through an explicit diagnostic command. Prove identity survives title changes and rejects stale handles after destruction. Run [the platform experiments](platform-experiments.md) before any mutation; record where visibility or identity remains ambiguous.
 
 Exit: correct classification on terminal, editor, browser, Finder, dialogs, and native tabs; no window movement. This is the next development step.
 
 ## M2 — Explicit tiling
 
-Enroll eligible windows on one desktop/monitor. Add per-application workers, frame diffing, conservative application, pause, and failure reporting. Keep all windows visible. Minimum-size rejection must stop retrying.
+Start with explicit focused-window enrollment on one desktop/monitor; bulk discovery is gated on visibility evidence. Add per-application workers, frame diffing, conservative application, pause, and failure reporting. Keep all windows visible. Minimum-size rejection must stop retrying.
 
-Exit: repeatable manual tiling and clean pause/quit; one stalled app does not block others.
+Exit: repeatable manual tiling and clean pause/quit; one stalled app does not block others. Fake-worker tests must cover pause races, late completions, queue overflow, and PID reuse before real writes. See [control contracts](control-contracts.md).
 
 ## M3 — Keyboard workflow
 
@@ -26,15 +26,15 @@ Exit: ordinary terminal/editor/browser session operated by keyboard without runa
 
 ## M4 — Daily-use hardening
 
-Add automatic enrollment only after explicit tiling works. Handle manual dragging, multiple displays, mixed scale, hotplug, sleep/wake, native Spaces/fullscreen/Mission Control, crash restart, and constrained applications. Add trace-based fake-platform tests and latency measurements.
+Add automatic enrollment only after explicit tiling works and the visibility gate passes for supported cases. Handle manual dragging, multiple displays, mixed scale, hotplug, sleep/wake, native Spaces/fullscreen/Mission Control, crash restart, and constrained applications. Add trace-based fake-platform tests and latency measurements.
 
 Exit: multi-day local usage with documented app/OS coverage and no unrecovered hidden windows or unbounded resource growth. No stability claims based solely on unit tests.
 
 ## M5 — Public preview
 
-Choose final name, ownership and license; audit attribution and secrets; select stable bundle identifier; add hosted macOS CI, release notes, reproducible packaging, contribution templates, and a private vulnerability-reporting channel. Decide Developer ID signing/notarization and explain any preview distribution limitations.
+MIT licensing and GitHub source hosting are complete. Choose the final name; audit attribution and secrets; select stable bundle identifier; add hosted macOS CI, release notes, reproducible packaging, contribution templates, and a private vulnerability-reporting channel. Decide Developer ID signing/notarization and explain any preview distribution limitations.
 
-Publish only when requested. Hosting workflow actions, if added, are development infrastructure and must be documented separately from the zero-package product policy.
+Publish release artifacts only when requested. Hosting workflow actions, if added, are development infrastructure and must be documented separately from the zero-package product policy.
 
 ## Deferred research
 

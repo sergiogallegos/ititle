@@ -4,6 +4,8 @@
 
 Implemented today: `LayoutNode`, `Rect`, `LayoutEngine`, trust-status query, menu-bar preview, and packaging. Everything described below beyond those components is a proposed implementation contract, not working functionality.
 
+The second-pass contracts are authoritative where the initial outline was incomplete: [ADR 0002](decisions/0002-control-boundary.md), [control contracts](control-contracts.md), and [platform experiments](platform-experiments.md). Real writes are gated on those experiments.
+
 ## Modules
 
 | Module | Responsibility | Must not own |
@@ -29,13 +31,15 @@ flowchart TD
     Results --> Queue
 ```
 
-AppKit stays on the main thread. The state coordinator is the sole owner of mutable layout state and can use a Swift actor. Synchronous AX calls must run on dedicated application workers, not on the main thread or Swift's cooperative executor. Each worker owns its AX elements and observer run loop; do not broadly mark AX handles unchecked Sendable to bypass ownership problems.
+AppKit stays on the main thread. The state coordinator is the sole owner of mutable layout state and uses a Swift actor with explicit nonblocking reduction and version-checked replies. Synchronous AX calls must run on dedicated application workers, not on the main thread or Swift's cooperative executor. Each worker owns its AX elements and observer run loop; do not broadly mark AX handles unchecked Sendable to bypass ownership problems.
 
-Commands advance a generation. Each worker keeps the latest pending target per window and verifies the generation before issuing a write. An in-flight synchronous call cannot be safely assumed cancelled; stale completions trigger observation/reconciliation, never a stale tree replacement. Permit at most one write sequence per application at a time. Worker teardown follows application termination; avoid unbounded queue growth.
+Commands reduce in order and advance a layout revision. Desktop/display invalidations advance a separate environment epoch. Each worker keeps the latest pending absolute target per window and verifies identity, epoch, revision, and admission before each setter/action. An in-flight synchronous call cannot be safely assumed cancelled; stale completions trigger observation/reconciliation, never a stale tree replacement. Permit at most one write sequence per application at a time. Worker teardown follows application termination; avoid unbounded queue growth.
 
 ## Window identity and discovery
 
 Use an internal token scoped to application process lifetime and registry generation. AX element equality can help correlate windows within that lifetime. Do not use title strings as identity, assume PIDs cannot be reused, or depend on private AX-to-window-ID functions. Public window-list metadata may assist visibility, but mapping it to AX elements is an explicit research task. Ambiguity should reduce coverage rather than move the wrong window.
+
+Begin with explicitly focused-window enrollment; bulk enrollment is gated on visibility evidence. Invalidate enrollment on environment changes.
 
 Observe application launch/termination and window create/destroy/focus changes. Notification support varies; reconcile after explicit commands and recovery events, with a bounded low-frequency fallback only if measurements show it necessary. Avoid continuous global enumeration and title harvesting.
 
@@ -49,13 +53,13 @@ AX position and size updates are not an atomic desktop transaction. Apply only m
 
 ## Fault isolation
 
-Use AX messaging timeouts and application backoff; Swift task cancellation alone does not interrupt a blocked AX request. Exact timeout values are measurement-driven. No worker may hold a coordinator lock during IPC. If one app is unhealthy, suspend its management and continue handling other apps. If visibility becomes ambiguous after Mission Control, fullscreen, Space transition, wake, or display hotplug, invalidate plans and return to conservative discovery.
+Use explicitly configured AX messaging timeouts on the actual handles (or a deliberate process-wide default) and application backoff; Swift task cancellation alone does not interrupt a blocked AX request. Exact timeout values are measurement-driven. No worker may hold a coordinator lock during IPC. If one app is unhealthy, suspend its management and continue handling other apps. If visibility becomes ambiguous after Mission Control, fullscreen, Space transition, wake, or display hotplug, invalidate plans and return to conservative discovery.
 
-Process crashes should leave windows visible in their last real positions; no offscreen hiding is used. Quit stops observers, input interception, and new writes. Restoration of original frames is a separate best-effort command, never a promise to recreate the complete previous desktop.
+Process crashes should leave windows visible in their last real positions; no offscreen hiding is used. Pause and quit revoke new write admission; already admitted AX calls may complete afterward. Quit stops observers and input interception without waiting indefinitely for blocked workers. Restoration of original frames is a separate best-effort command, never a promise to recreate the complete previous desktop.
 
 ## Keyboard boundary
 
-Use a public Core Graphics event tap for configured chords. Its callback only recognizes bindings, enqueues a command, and returns; never solve layouts, perform AX IPC, or launch a subprocess there. Consume only handled chords. Handle tap disablement, key repeat, modifier changes, secure-input limitations, permission revocation, and non-US layouts explicitly. Global input capabilities must be requested only when that feature is enabled. Never record raw key streams.
+Use a public Core Graphics event tap for configured chords. Its callback only recognizes bindings, enqueues a command, and returns; never solve layouts, perform AX IPC, or launch a subprocess there. Install no global bindings until explicitly enabled. Consume only admitted chords and track down/repeat/up as one key lifecycle. Handle tap disablement, key repeat, modifier changes, secure-input limitations, permission revocation, and non-US layouts explicitly. Global input capabilities must be requested only when that feature is enabled. Never record raw key streams.
 
 ## Configuration, diagnostics, and performance
 

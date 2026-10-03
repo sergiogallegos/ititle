@@ -17,9 +17,9 @@ This is a macOS user-session application, not a kernel driver or compositor. Win
 
 ## First useful workflow (planned)
 
-Start paused. Invoke Tile to explicitly enroll eligible windows on the current desktop and focused monitor. Split horizontally or vertically, focus by direction, swap windows, adjust split ratios, and toggle floating. Maximize means using the available desktop area, not entering native fullscreen. Moving between monitors is added after coordinate conversion is validated.
+Start paused. In M2, explicitly enroll the focused standard window, then repeat for additional windows and invoke Tile on that selected set. Enrollment is scoped to the current desktop/display epoch and requires revalidation before mutation. Bulk enrollment of eligible windows on the current desktop is gated on the visibility experiments; it is not an assumed capability. Split horizontally or vertically, focus by direction, swap windows, adjust split ratios, and toggle floating. Maximize means using the available desktop area, not entering native fullscreen. Moving between monitors is added after coordinate conversion is validated.
 
-A status menu exposes paused/active/degraded state, reload configuration, and quit. Proposed shortcuts use Control+Option to leave common Command shortcuts available; they are configurable and must be checked against application shortcuts and keyboard layouts. The example JSON is not currently consumed.
+A status menu exposes paused/active/degraded state, reload configuration, and quit. Shortcuts are opt-in; no global bindings are installed by default. Control+Option overlaps VoiceOver’s default modifier, so it is not our default. The example uses configurable Control+Shift chords for a trial only; these can also conflict. Choose bindings after checking the user’s accessibility tools, applications, and keyboard layout. The example JSON is not currently consumed.
 
 Dialogs, sheets, minimized windows, native fullscreen windows, and unsupported windows remain outside the tiled tree. An app-specific rule can float a window that classification gets wrong. Manual dragging temporarily suspends writes to that window; explicit re-tile restores management. The first version does not continuously undo the user's mouse movements.
 
@@ -37,7 +37,7 @@ Animations, blur, custom decorations, a status-bar ecosystem, plugins, shell exe
 
 ## Proposed configuration contract
 
-JSON at `~/.config/itile/config.json`, schema version 1. The loader will use Codable plus explicit unknown-key checking. Reject duplicate/conflicting bindings and out-of-range gaps; preserve the previous valid configuration on failed reload. Error messages identify the field. No file watching until manual reload is reliable. No configuration or app state is written by the current preview.
+JSON at `~/.config/itile/config.json`, schema version 1. Start-paused is mandatory for the first release, not a configurable bypass. The loader will use Codable plus explicit unknown-key checking. Bindings are an array so normalized chord duplicates can be validated instead of silently overwritten as object keys. Reject conflicting bindings, unknown commands, and out-of-range gaps; preserve the previous valid configuration on failed reload. Duplicate JSON object-member detection is not promised by Foundation decoding; schema fields must appear once, and no control-safety property may rely on duplicate-member rejection. Error messages identify the field. No file watching until manual reload is reliable. No configuration or app state is written by the current preview.
 
 ## Naming and identity
 
