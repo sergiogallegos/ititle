@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "startPaused": true,
+  "layout": { "innerGap": 8, "outerGap": 8 },
+  "bindings": {
+    "ctrl+alt+return": "tile",
+    "ctrl+alt+h": "focus-left",
+    "ctrl+alt+j": "focus-down",
+    "ctrl+alt+k": "focus-up",
+    "ctrl+alt+l": "focus-right",
+    "ctrl+alt+escape": "pause"
+  }
+}
