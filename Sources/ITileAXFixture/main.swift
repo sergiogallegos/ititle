@@ -34,13 +34,25 @@ final class StructuralFault {
   var childDelay: Double = 0
   var hideOnChildrenRead = false
   var stallOnChildrenRead = false
+  var transitionOnChildrenRead: (@MainActor () -> Void)?
 
   func run() {
+    if let transition = transitionOnChildrenRead {
+      transitionOnChildrenRead = nil
+      transition()
+    }
     if hideOnChildrenRead {
       hideOnChildrenRead = false
       emitFixtureEvent("nested-focus-loss-begin")
-      NSApp.hide(nil)
-      Thread.sleep(forTimeInterval: 0.1)
+      let accepted = NSRunningApplication.current.hide()
+      emitFixtureEvent(accepted ? "nested-hide-accepted" : "nested-hide-rejected")
+      // Let this owned fixture process the asynchronous hide request. Sleeping
+      // in this accessor can prevent the main loop from applying it at all.
+      RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.15))
+      emitFixtureEvent(
+        NSWorkspace.shared.frontmostApplication?.processIdentifier
+          == ProcessInfo.processInfo.processIdentifier
+          ? "nested-still-frontmost" : "nested-no-longer-frontmost")
       emitFixtureEvent("nested-focus-loss-end")
     }
     if stallOnChildrenRead {
@@ -121,7 +133,9 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
             "stall", "quit", "arm-focus-loss", "arm-window-stall", "activate",
             "tree-ordinary", "tree-direct-sheet", "tree-nested-sheet", "tree-dialog",
             "tree-system-dialog", "tree-wide", "tree-deep", "tree-cycle", "tree-budget",
-            "tree-focus-loss", "tree-stall", "native-sheet", "close-sheet",
+            "tree-focus-loss", "tree-focus-switch", "tree-stall", "tree-sheet-remove",
+            "tree-native-sheet-open",
+            "native-sheet", "close-sheet",
           ].contains(command)
         else { continue }
         DispatchQueue.main.async { [weak self] in
@@ -135,6 +149,12 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
             self?.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             emitFixtureEvent("activation-requested")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+              emitFixtureEvent(
+                NSWorkspace.shared.frontmostApplication?.processIdentifier
+                  == ProcessInfo.processInfo.processIdentifier
+                  ? "activation-confirmed" : "activation-not-frontmost")
+            }
             return
           }
           if command == "arm-focus-loss" {
@@ -172,19 +192,13 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
     sheet = nil
     // Break deliberately cyclic child links before releasing an old scenario.
     window.structuralChildren = nil
-    for node in structuralNodes { node.setAccessibilityChildren([]) }
+    for node in structuralNodes {
+      node.fault.transitionOnChildrenRead = nil
+      node.setAccessibilityChildren([])
+    }
     structuralNodes.removeAll()
     if command == "native-sheet" {
-      let sheet = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 300, height: 100),
-        styleMask: [.titled, .closable], backing: .buffered, defer: false)
-      sheet.isReleasedWhenClosed = false
-      sheet.title = "Owned native sheet"
-      let label = NSTextField(labelWithString: "Native AppKit sheet — fixture only")
-      label.frame = NSRect(x: 15, y: 25, width: 270, height: 40)
-      sheet.contentView?.addSubview(label)
-      self.sheet = sheet
-      window.beginSheet(sheet)
+      openNativeSheet()
     } else if command != "close-sheet" {
       func node(_ role: NSAccessibility.Role = .group, parent: AnyObject) -> FixtureStructuralNode {
         let node = FixtureStructuralNode()
@@ -219,6 +233,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
         parent.setAccessibilityChildren([node(.sheet, parent: parent)])
       case "tree-cycle": group.setAccessibilityChildren([group])
       case "tree-budget":
+        group.fault.transitionOnChildrenRead = { emitFixtureEvent("nested-budget-begin") }
         var children: [FixtureStructuralNode] = []
         for _ in 0..<20 {
           let child = node(parent: group)
@@ -227,13 +242,55 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
         }
         children.append(node(.sheet, parent: group))
         group.setAccessibilityChildren(children)
+      case "tree-sheet-remove":
+        let sheetNode = node(.sheet, parent: group)
+        group.setAccessibilityChildren([sheetNode])
+        sheetNode.fault.transitionOnChildrenRead = { [weak group] in
+          emitFixtureEvent("nested-sheet-remove-begin")
+          group?.setAccessibilityChildren([])
+          emitFixtureEvent("nested-sheet-remove-end")
+        }
+      case "tree-native-sheet-open":
+        group.fault.transitionOnChildrenRead = { [weak self] in
+          emitFixtureEvent("nested-native-sheet-open-begin")
+          self?.openNativeSheet()
+          emitFixtureEvent("nested-native-sheet-open-end")
+        }
       case "tree-focus-loss": group.fault.hideOnChildrenRead = true
+      case "tree-focus-switch":
+        group.fault.transitionOnChildrenRead = {
+          emitFixtureEvent("nested-focus-switch-begin")
+          let control = NSRunningApplication.runningApplications(
+            withBundleIdentifier: "local.itile.axfixture.control"
+          ).first
+          let accepted = control?.activate(options: []) == true
+          emitFixtureEvent(accepted ? "nested-switch-accepted" : "nested-switch-rejected")
+          RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.15))
+          emitFixtureEvent(
+            NSWorkspace.shared.frontmostApplication?.processIdentifier == control?.processIdentifier
+              && control != nil ? "nested-control-frontmost" : "nested-control-not-frontmost")
+          emitFixtureEvent("nested-focus-switch-end")
+        }
       case "tree-stall": group.fault.stallOnChildrenRead = true
       default: break
       }
     }
     state.stringValue = "Nested probe scenario: \(command)"
     emitFixtureEvent(command + "-ready")
+  }
+
+  private func openNativeSheet() {
+    guard let window, sheet == nil else { return }
+    let sheet = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 300, height: 100),
+      styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    sheet.isReleasedWhenClosed = false
+    sheet.title = "Owned native sheet"
+    let label = NSTextField(labelWithString: "Native AppKit sheet — fixture only")
+    label.frame = NSRect(x: 15, y: 25, width: 270, height: 40)
+    sheet.contentView?.addSubview(label)
+    self.sheet = sheet
+    window.beginSheet(sheet)
   }
 
   private func stall() {

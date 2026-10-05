@@ -579,6 +579,30 @@ Source verification passes 71 tests (60 core, 11 platform), strict Swift formatt
 
 Accept the scoped positive detection, explicit limits/budget/cycle outcomes, native-sheet exclusion, synchronized pause recovery, and separate-worker response observations. Direct foreground/menu acceptance with the new scanner, sheet-tree mutation during a scan, and nested-read-specific mid-request permission/focus rejection remain pending. Earlier M2.2 lifecycle evidence remains scoped to its earlier reader and is not silently promoted to new nested-scan coverage. Structural completeness does not close lifecycle, native-tab, or visibility proof requirements. Production mutation scope remains empty.
 
+## M2.4 foreground and nested-read lifecycle acceptance — 2026-10-05 05:05–05:29 UTC
+
+Added `scripts/nested-lifecycle-lab.swift`, a Swift/Apple-framework-only local controller with private FIFOs, LaunchServices launches, bounded fresh-event correlation, and an explicit redacted report/trace transcript. It launches only iTile and the two owned fixture bundles. Fixture commands now support synthetic sheet-link removal, native AppKit sheet opening, and activation of the owned control fixture from within a structural children accessor. None changes production AX budgets, admission, or mutation behavior. The installed iTile executable remained unchanged (SHA-256 `e83729432ef8b642b8617797002b8813798889081cbfdcccfee15bd4f20e0fd9`), preserving the refreshed bundle grant.
+
+The normal foreground handler, rather than the targeted backend bypass, presented the nested-sheet fixture as sheets=1, dialogs=0, nodes=3, complete, direct sheets=0, with `sheetPresent` exclusion. Repetitions after permission and focus recovery confirmed the same positive result. On macOS 27.0.1 (26A434), the final transcript established:
+
+| Scenario | Correlated uptime evidence | Observed result |
+| --- | --- | --- |
+| Sheet-link removal, request 16 | worker 90284.244354–90284.246468; removal 90284.246294–90284.246350 | Historical positive retained: sheets=1, nodes=3, complete, `sheetPresent`; removal does not erase evidence already observed |
+| Native sheet opening, request 17 | worker 90284.453325–90284.486287; opening 90284.454791–90284.479907 | Parent structural sample had no nested sheet, but final focused-window equality was false and `focusChanged` excluded the observation |
+| Focus switch, request 18 | worker 90294.059577–90294.228574; switch began 90294.061320; focus invalidated 90294.065682; owned control confirmed foreground 90294.221307 | Completion discarded at 90294.228784; fresh nested-sheet inspection presented at 90294.393555 |
+| Effective permission loss, request 7 | worker 90252.898460–90253.882012; nested budget began 90252.901082; trust=false 90253.820457 | Invalidation at 90253.820518 and discarded completion at 90253.882063; permission-missing report, no stale observation retained |
+| Permission recovery, request 15 | restored settings switch on; app trust=true 90283.891907; fresh worker 90284.045200–90284.050074 | New epoch 8/token window-3, nested-sheet finding and exclusion; no replay of the prior observation |
+
+The permission race used at most three successive ordinary-handler requests with bounded status sampling. Earlier requests still saw trust=true and are not counted as revocation evidence. Only iTile's existing settings switch was toggled; it was restored to on, with effective trust=true verified through the same LaunchServices app. Repeated missing-trust status refreshes advanced the invalidation epoch; this is diagnostic behavior, not enrollment recovery.
+
+The user performed the actual **Inspect focused window** menu action and replied done. Trace request 2 in the earlier session ran at uptime 90035.057196–90035.085618 and presented at 90035.087970. Its report selected a different foreground application, with a standard window, nodes=31, complete, and unknown eligibility. This establishes actual menu delivery through the new scanner, not a second nested-sheet fixture result. No application content was recorded.
+
+Two self-hide attempts failed to demonstrate focus loss. The instrumented attempt explicitly reported `nested-hide-rejected` and `nested-still-frontmost`; its presented result is not counted as rejection evidence. Switching between owned fixture applications subsequently established actual mid-read focus invalidation and discard, twice. A queued activation/revalidate attempt lacked activation-completion synchronization and is also not counted as historical-token acceptance.
+
+Accept these scoped foreground/menu, sheet-transition, observed nested-read focus/permission discard, and fresh recovery results. They do not prove uninterrupted lifecycle continuity, generic tree coverage, native-tab safety, current-desktop visibility, or eligible mutation scope. Next: read-only native-tab evidence and an enforceable conservative focused-window exclusion policy. Window mutation remains disabled.
+
+Verification passed strict formatting, all 71 tests (60 core, 11 platform), debug builds, plist/script checks, and Swift 6 typechecking of the controller. Owned lab processes were stopped and iTile relaunched in normal mode after the checks.
+
 ### Permission-context preflight and final recovery
 
 The user authenticated directly in macOS when changing only iTile's existing access; no credentials were entered or collected by the agent. The settings switch became off. However, an iTile executable launched directly as a terminal child still reported trusted=true. This launch context did not establish effective revocation; inherited responsible-process access is a plausible explanation, not a separately traced TCC conclusion. Do not use terminal-child trust to validate iTile's own bundle grant.

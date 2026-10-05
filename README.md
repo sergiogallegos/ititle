@@ -14,7 +14,7 @@ The goal is a small tool that arranges ordinary windows predictably, responds qu
 - A menu-bar read-only probe with explicit per-application inspection, permission onboarding, pause, and Quit.
 - Explicit focused-window inspection and historical-token revalidation, with scoped focus-loss, mid-request permission-loss, desktop invalidation, and physical display hotplug checks. Eligibility remains unknown or ineligible.
 - A pure focused eligibility assessment with explicit exclusion/missing-evidence reasons and validation before projecting control records. No eligible production scope is enabled.
-- Bounded read-only nested sheet/dialog detection during focused inspection, with explicit incomplete outcomes; scoped fixture/native-sheet checks are recorded, with lifecycle acceptance still partial.
+- Bounded read-only nested sheet/dialog detection during focused inspection, with explicit incomplete outcomes; scoped fixture/native-sheet, menu, sheet-transition, and focus/permission rejection checks are recorded; generic coverage remains unproven.
 - Dedicated per-application AX threads, session-local window tokens, typed unknown/error results, and redacted diagnostic reports.
 - Window roles, minimized/fullscreen state, frame capabilities, screen geometry, and uncorrelated on-screen CG bounds. It never moves windows or captures keyboard input.
 - Local app packaging and architecture, decision, testing, and contribution documentation.
