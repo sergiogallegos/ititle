@@ -1,6 +1,6 @@
 # Control contracts
 
-Accepted design after review; not implemented. These contracts govern the future coordinator and platform adapter. The current geometry scaffold does not satisfy them by itself.
+Accepted design after review. The M1 adapter implements a read-only subset (dedicated AX threads, bounded admission, process-scoped tokens, destruction invalidation, explicit handle timeouts). See [implemented limits](m1-probe.md). M2.1 now implements the [pure control model and simulated admission](m2-control-model.md). The live coordinator, synchronized worker admission, and real write path remain proposed and unvalidated; simulation does not establish platform eligibility or write safety.
 
 ## State and identity
 

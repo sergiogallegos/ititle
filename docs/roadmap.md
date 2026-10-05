@@ -6,13 +6,17 @@
 - Zero-dependency package, pure split solver, tests.
 - Inert menu-bar shell and local app packaging.
 
-## M1 — Read-only platform probe
+## M1 — Read-only platform probe (implemented; partial manual validation)
 
-Implement permission onboarding and per-application discovery. List redacted window tokens, roles, supported operations, and display geometry through an explicit diagnostic command. Prove identity survives title changes and rejects stale handles after destruction. Run [the platform experiments](platform-experiments.md) before any mutation; record where visibility or identity remains ambiguous.
+Permission onboarding and explicit per-application discovery are implemented; see [probe usage and limits](m1-probe.md). List redacted window tokens, roles, supported operations, and display geometry through an explicit diagnostic command. Prove identity survives title changes and rejects stale handles after destruction. Run [the platform experiments](platform-experiments.md) before any mutation; record where visibility or identity remains ambiguous.
 
-Exit: correct classification on terminal, editor, browser, Finder, dialogs, and native tabs; no window movement. This is the next development step.
+Exit: correct classification on terminal, editor, browser, Finder, dialogs, and native tabs; no window movement. P1/P2 and P4 have partial recorded observations; P3 has a scoped accepted fixture result. Native-tab identity and visibility exclusions remain. M1 is not validated complete; see the [readiness review](m1-readiness.md) for evidence and remaining gates.
 
 ## M2 — Explicit tiling
+
+**M2.1 implemented:** [pure control model and simulated admission](m2-control-model.md), with structured observations, independent generations, state transitions, and deterministic fake-worker race tests. No live setters or coordinator integration.
+
+Next task: **M2.2 — focused read-only observation and revalidation**. Establish structured platform evidence for explicit focused enrollment, including focus changes caused by the inspector, sheets, and lifecycle invalidation. Retain unknowns and keep mutation disabled while M1's remaining platform gates stay open.
 
 Start with explicit focused-window enrollment on one desktop/monitor; bulk discovery is gated on visibility evidence. Add per-application workers, frame diffing, conservative application, pause, and failure reporting. Keep all windows visible. Minimum-size rejection must stop retrying.
 

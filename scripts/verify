@@ -3,4 +3,5 @@ set -eu
 cd "$(dirname "$0")/.."
 swift build
 swift test
-plutil -lint Resources/Info.plist
+plutil -lint Resources/Info.plist Resources/P3Lab-Info.plist
+sh -n scripts/package-p3-lab

@@ -1,12 +1,14 @@
 # Testing and measurement
 
-Run `scripts/verify` for the current build, pure layout tests, and bundle metadata lint. Run `scripts/package-app` to validate release compilation and ad-hoc app packaging. The app must be opened separately to validate its menu; compilation alone is not UI verification.
+Run `scripts/verify` for the current build (including P3 tools), core/platform tests, and bundle metadata lint. The separate [P3 lab](p3-lab.md) is packaged with `scripts/package-p3-lab`; real measurements require running that app with its own explicit Accessibility permission. Run `scripts/package-app` to validate release compilation and ad-hoc app packaging. The app must be opened separately to validate its menu; compilation alone is not UI verification.
 
 ## Current automated coverage
 
-Nested horizontal/vertical geometry, gap conservation, negative display origin, duplicate identity rejection, invalid bounds/ratios/gaps, and a sweep of split ratios. No AX mutation, desktop integration, or performance claim is covered by these tests.
+The latest recorded verification passed 49 tests (40 core, 9 platform), including 26 control-model scenarios for admission, invalidation, bounded pending work, and late fake-worker results. Existing coverage includes nested geometry and gap conservation; invalid geometry and duplicate rejection; token retention/retirement and process generations; coordinate round trips; latency summaries; incomplete sheet evidence; dedicated worker ownership, isolation, bounded admission, stop and reuse; and fixture pipe short-message delivery/EOF. See [validation](validation.md) for the run history. No AX mutation, desktop integration, or performance claim is covered by these tests.
 
 ## Planned fake-platform tests
+
+[M2.1 control model and simulated admission](m2-control-model.md) now covers deterministic event interleavings. Actor integration, synchronized worker admission, and real setters remain separate work; focused read-only platform revalidation is next.
 
 Record redacted events and replay them through the coordinator: create/destroy storms, stale generations, delayed writes, permission loss, PID reuse, observer failure, and app timeout. Check that destroyed windows receive no new writes, stale results cannot replace current state, pending work is bounded, and one failing app cannot stop another.
 
@@ -39,4 +41,4 @@ Before frame mutation, execute P1–P4 in [platform experiments](platform-experi
 
 Test ordered resize/focus/swap commands separately from coalesced absolute frame targets. Exercise finite bounds/depth limits, rounding, outer gaps, leaf removal, constraint rejection, and deterministic directional focus. Config tests must cover unknown fields/commands, normalized duplicate chords in the bindings list, malformed reload retention, and disabled keyboard defaults. Input tests cover balanced down/up handling and queue rejection passing events through.
 
-These are planned tests; the four existing geometry cases do not cover them.
+Control state/admission interleavings are now covered by the M2.1 simulation tests. Platform write, input, configuration, and broader layout-policy tests remain planned. Neither these simulations nor the existing probe tests establish real write safety.

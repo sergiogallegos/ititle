@@ -1,8 +1,10 @@
 # Read-only feasibility experiments
 
-Status: planned; none has been executed. Do these before implementing frame mutation. Use Apple public APIs and no screenshots or Screen Recording permission. Store only explicitly exported, redacted metadata.
+Status: partial user-reported P1/P2 observations are recorded in [validation](validation.md); full gates remain open. P3 has [lab tooling](p3-lab.md) and a scoped five-trial real-AX isolation/recovery result plus active Stop/Quit checks recorded in validation; broader guarantees remain unproven. The [M1 probe](m1-probe.md) now provides read-only observations for these experiments; implementation and unit tests do not constitute experimental evidence. Do these before implementing frame mutation. Use Apple public APIs and no screenshots or Screen Recording permission. Store only explicitly exported, redacted metadata.
 
 ## P1 — Window identity and eligibility
+
+For the consolidated P1–P4 decision, including partial P4 physical-display evidence and the next simulation-only task, see the [M1 readiness review](m1-readiness.md). The timestamped log retains earlier checkpoints as history.
 
 Enumerate AX windows with each app's worker, correlate live elements by equality within process lifetime, and assign internal tokens. Observe close/reopen, title changes, native tabs, multiple identical windows, app restart, and minimized/fullscreen windows.
 

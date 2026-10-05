@@ -2,7 +2,7 @@
 
 A minimal, keyboard-driven tiling companion for macOS. Built from scratch in Swift with zero third-party dependencies.
 
-**Status: local foundation prototype. This is not yet a working window manager.** The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
+**Status: M1 read-only probe implemented with partial manual validation; real window mutation remains gated. This is not yet a working window manager.** See the [readiness review and next task](docs/m1-readiness.md). The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
 
 The goal is a small tool that arranges ordinary windows predictably, responds quickly to commands, and yields gracefully when macOS or an application cannot cooperate. One menu-bar app, public APIs, SIP enabled, no external services.
 
@@ -10,11 +10,13 @@ The goal is a small tool that arranges ordinary windows predictably, responds qu
 
 - A dependency-free Swift package with separate core, platform, and app targets.
 - A pure binary split layout engine with geometry validation and unit tests.
-- A menu-bar preview showing status and a Quit action; it never moves windows or captures keyboard input.
-- A read-only Accessibility trust check.
+- A pure control-state model with structured observations and simulated per-setter admission; not connected to live window control.
+- A menu-bar read-only probe with explicit per-application inspection, permission onboarding, pause, and Quit.
+- Dedicated per-application AX threads, session-local window tokens, typed unknown/error results, and redacted diagnostic reports.
+- Window roles, minimized/fullscreen state, frame capabilities, screen geometry, and uncorrelated on-screen CG bounds. It never moves windows or captures keyboard input.
 - Local app packaging and architecture, decision, testing, and contribution documentation.
 
-Window discovery, frame mutation, hotkeys, configuration loading, automatic tiling, and workspaces are **not implemented**. `config/proposed-v1.json` is a design example, not a working configuration.
+Automatic discovery, frame mutation, hotkeys, configuration loading, automatic tiling, and workspaces are **not implemented**. Read-only discovery runs only for an application explicitly selected from the menu. Identity continuity and current-desktop visibility are experimental, not validated guarantees. `config/proposed-v1.json` is a design example, not a working configuration.
 
 ## Build
 
@@ -25,7 +27,7 @@ scripts/verify
 scripts/package-app
 ```
 
-Packaging produces `dist/iTile.app` with an ad-hoc signature. Open it in Finder to try the inert menu-bar preview; Quit iTile exits it. No Accessibility permission is needed for this preview. Rebuilding an ad-hoc signed app may invalidate future permission grants; distribution signing is a later milestone.
+Packaging produces `dist/iTile.app` with an ad-hoc signature. Open it in Finder to use the menu-bar probe; Quit iTile exits it. Opening the app needs no Accessibility permission. Choose **Enable Accessibility for inspection…**, grant permission in System Settings, then choose **Inspect application**. The report stays in memory unless you explicitly use **Copy diagnostic report**. **Pause inspections** rejects new requests and discards late results. Rebuilding an ad-hoc signed app may invalidate future permission grants; distribution signing is a later milestone.
 
 No package manager or network downloads are needed once Apple's developer tools are installed. Zero dependencies means zero third-party build/runtime packages; the Swift toolchain, Apple frameworks, and system shell utilities remain prerequisites.
 
@@ -33,9 +35,10 @@ No package manager or network downloads are needed once Apple's developer tools 
 
 ```text
 Sources/ITileCore/       Value types and deterministic layout geometry
-Sources/ITilePlatform/   macOS boundary (currently trust check only)
+Sources/ITilePlatform/   Read-only AX workers and trust status
 Sources/ITileApp/        AppKit menu-bar lifecycle
-Tests/ITileCoreTests/    Geometry and invariant tests
+Tests/ITileCoreTests/    Geometry, identity, and coordinate tests
+Tests/ITilePlatformTests/ Worker lifecycle and fault-isolation tests
 Resources/              App bundle metadata
 config/                 Proposed configuration
 scripts/                Verify and package locally
@@ -49,6 +52,10 @@ docs/                   Product, architecture, decisions, and research
 - [Foundation decisions](docs/decisions/0001-foundation.md)
 - [Second-pass review](docs/review-2026-10-02.md)
 - [Control contracts](docs/control-contracts.md)
+- [M2.1 control model and simulation limits](docs/m2-control-model.md)
+- [Read-only probe usage and manual checks](docs/m1-probe.md)
+- [M1 readiness and M2.1 acceptance criteria](docs/m1-readiness.md)
+- [P3 delay/timeout lab](docs/p3-lab.md)
 - [Read-only feasibility experiments](docs/platform-experiments.md)
 - [Inspirations and source references](docs/inspirations.md)
 - [Roadmap](docs/roadmap.md)

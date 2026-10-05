@@ -2,9 +2,11 @@
 
 ## Implementation boundary
 
-Implemented today: `LayoutNode`, `Rect`, `LayoutEngine`, trust-status query, menu-bar preview, and packaging. Everything described below beyond those components is a proposed implementation contract, not working functionality.
+Implemented today: `LayoutNode`, `Rect`, `LayoutEngine`, pure probe identity registry and coordinate transform, trust-status query, permission-settings onboarding, explicit read-only per-application discovery on dedicated AX threads, destruction observers, redacted reports, pause/quit, and packaging. See [M1 probe](m1-probe.md) for the implemented limits. M2.1 also implements a pure control reducer, immutable control records, and simulated admission with deterministic fake-worker tests; see [its boundary](m2-control-model.md). The live coordinator/worker admission mailbox, platform enrollment, mutation, hotkeys, and automatic reconciliation described below remain proposed contracts.
 
 The second-pass contracts are authoritative where the initial outline was incomplete: [ADR 0002](decisions/0002-control-boundary.md), [control contracts](control-contracts.md), and [platform experiments](platform-experiments.md). Real writes are gated on those experiments.
+
+The [2026-10-04 readiness review](m1-readiness.md) consolidates experimental coverage and specified M2.1: pure control state and simulated admission before real setter integration. That simulation task is now implemented; the next platform task is focused read-only observation/revalidation. It does not mark M1's remaining platform gates complete.
 
 ## Modules
 

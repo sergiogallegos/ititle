@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")/.."
+swift build -c release --product iTileP3Lab
+swift build -c release --product iTileAXFixture
+binary_dir=$(swift build -c release --show-bin-path)
+app_dir="dist/iTile P3 Lab.app"
+mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Helpers"
+cp "$binary_dir/iTileP3Lab" "$app_dir/Contents/MacOS/iTileP3Lab"
+cp "$binary_dir/iTileAXFixture" "$app_dir/Contents/Helpers/iTileAXFixture"
+cp Resources/P3Lab-Info.plist "$app_dir/Contents/Info.plist"
+codesign --force --sign - "$app_dir/Contents/Helpers/iTileAXFixture"
+codesign --force --sign - "$app_dir"
+codesign --verify --strict --verbose=2 "$app_dir"
+printf 'Created %s; existing dist/iTile.app was not changed.\n' "$app_dir"
