@@ -8,6 +8,8 @@ final class FocusedWorkerTests: XCTestCase {
   func testFocusedReadSharesBoundedMailboxAndStopSuppressesLateResult() {
     let entered = expectation(description: "focused read entered")
     let retired = expectation(description: "focused worker retired")
+    let tracedFinish = expectation(description: "backend finish traced despite stopped delivery")
+    let tracedStart = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)
     let probe = WindowProbe(
       token: AppToken(pid: 1, generation: 1),
@@ -17,6 +19,7 @@ final class FocusedWorkerTests: XCTestCase {
             XCTAssertEqual(epoch, 12)
             XCTAssertNil(expected)
             XCTAssertFalse(cancelled())
+            XCTAssertEqual(tracedStart.wait(timeout: .now()), .success)
             entered.fulfill()
             XCTAssertEqual(release.wait(timeout: .now() + 5), .success)
             XCTAssertTrue(cancelled())
@@ -28,16 +31,28 @@ final class FocusedWorkerTests: XCTestCase {
       probe.stop()
     }
     XCTAssertTrue(
-      probe.inspectFocused(environmentEpoch: 12) { _ in XCTFail("Stopped result delivered") })
+      probe.inspectFocused(
+        environmentEpoch: 12,
+        trace: { event in
+          XCTAssertFalse(Thread.isMainThread)
+          XCTAssertTrue(event.uptime.isFinite && event.uptime > 0)
+          switch event.phase {
+          case .workerStarted: tracedStart.signal()
+          case .workerFinished: tracedFinish.fulfill()
+          }
+        }
+      ) { _ in XCTFail("Stopped result delivered") })
     wait(for: [entered], timeout: 2)
     for _ in 0..<100 {
       XCTAssertFalse(probe.inspect(environmentEpoch: 13) { _ in XCTFail("Extra report queued") })
       XCTAssertFalse(
-        probe.inspectFocused(environmentEpoch: 13) { _ in XCTFail("Extra focus read queued") })
+        probe.inspectFocused(
+          environmentEpoch: 13, trace: { _ in XCTFail("Rejected request traced as executing") }
+        ) { _ in XCTFail("Extra focus read queued") })
     }
     probe.stop()
     release.signal()
-    wait(for: [retired], timeout: 2)
+    wait(for: [tracedFinish, retired], timeout: 2)
   }
 
   func testStructuredFocusedResultAndExpectedTokenStayOnSameWorker() {

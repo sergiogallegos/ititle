@@ -460,3 +460,133 @@ At 03:02:16, baseline was `app-12/window-1`, epoch 34, sequence 1. The arm ackno
 Accepted scope: a real Space transition overlapped execution of an owned AX accessor, and the resulting historical reference remained invalid until a fresh inspection. Limits: the fixture cannot identify the AX caller; no other client deliberately read it while armed. Per-call timeouts can finish before the accessor returns. Production request-completion time was not traced, and simultaneous focus invalidation was not isolated from environment invalidation. Do not turn this into a hard client-IPC overlap or all-races guarantee. Physical display changes were not tested in this focused sequence.
 
 Both disposable processes exited; a final process check found neither remaining. The original desktop was restored. Final `scripts/verify` after the fixture change passed strict formatting, all 57 tests (46 core, 11 platform), debug builds, both plists, and script syntax. No production source correction was justified by these observations. Next: effective mid-read permission-loss evidence and focused physical display changes; supported-scope exclusions continue to gate real mutation.
+
+## Commit/push and physical display round trip — 2026-10-05 03:10–03:15 UTC (Oct 4 local)
+
+At the user's request, fetched main, confirmed no divergence, and committed the previous fixture/evidence checkpoint as `24fafc7` (`Validate focused permission recovery and desktop invalidation`). Push to origin/main succeeded. Subsequent changes below are separate local work.
+
+The user confirmed the second monitor was available and disconnected. A parent-controlled fixture stayed alive through the entire physical connection/disconnection sequence; iTile was not rebuilt or restarted during it. These observations used the prior installed executable hash `9a882ea231da7fa48a0f6c4c2fe447fb20fa2d824dc516f38567b6b23e1ca9c1`, macOS 27.0.1 (26A434), arm64.
+
+| Checkpoint | Observation |
+| --- | --- |
+| 03:12:29 single-display baseline | `app-13/window-1`, epoch 37, sequence 1; display usable `(0,30,2048,1187)`, scale 1; fixture frame `(200,922,420,158)` |
+| User connected second display and confirmed settled | Report changed to environment-stale message; Revalidate rejected the historical token |
+| 03:14:11 two-display recovery | `app-13/window-2`, epoch 41, sequence 2; display 0 usable `(0,33,1512,891)`, scale 2; display 1 usable `(-515,-1410,2560,1410)`, scale 2; fixture frame `(236,470,420,158)` |
+| User disconnected second display and confirmed settled | Report again changed to environment-stale message; Revalidate again rejected the historical token |
+| 03:15:11 single-display recovery | `app-13/window-3`, epoch 44, sequence 3; display usable `(0,30,2048,1187)`, scale 1; fixture frame `(200,922,420,158)` |
+
+Every successful fixture report was standard/non-minimized/non-fullscreen/non-modal, position-settable=true, size-settable=false, focused/destruction checks true, and ineligible. The fixture exited normally with status 0. iTile issued no setters; no cause beyond the observed display transition is assigned to the changed fixture frame. This covers focused reference invalidation and recovery across physical hotplug between requests. It does not establish mixed-scale simultaneous displays, mutation geometry, or hotplug during an admitted AX call.
+
+## Opt-in client request trace — 2026-10-05 03:13–03:16 UTC (Oct 4 local)
+
+Added an optional metadata-only trace callback around the focused backend on its dedicated worker, plus `--trace-focused-probe` application logging through OSLog. The visible menu indicator identifies trace mode. Events correlate worker start/return, main-thread completion/disposition, trust samples, and environment/focus invalidation using host uptime and session-local counters. Defaults remain off; no window content, titles, paths, or process IDs are included in the payload. Unified-log retention is controlled by macOS and documented separately from the memory-only report.
+
+Extended the existing blocked-worker test to require trace start before backend entry, trace finish even when stop suppresses delivery, and no execution trace for rejected mailbox requests. An initial closure type-inference compiler failure was fixed by replacing a conditional closure expression with explicit branches. Final `scripts/verify` passed all 57 tests, strict formatting, debug builds, plist checks, and script syntax. Trace finish intentionally excludes autorelease cleanup/main delivery; documentation distinguishes this from whole-request duration and permits the main-thread admission log to follow worker start.
+
+After the physical display test completed, quit the old iTile, packaged the new release, and verified its ad-hoc signature. New executable SHA-256: `8a485458f5bf8e1e5e7a21554ec029a6292863fcab8d9804cc0a4cc150d42710`. Launched with the trace flag and captured only the `local.itile.app` / `FocusedProbeTrace` log category. The menu indicator and `traceEnabled` event were observed. The rebuilt app reported missing Accessibility permission; `menuTrust trust=0` and invalidation were logged. Requested the user's refresh of the exact bundle entry before continuing live timing acceptance. No effective mid-read permission-loss pass is claimed by this preflight.
+
+## Traced permission loss inside a backend request — 2026-10-05 03:18–03:28 UTC (Oct 4 local)
+
+After the user initially reported the entry refreshed, the settings list did not contain iTile; the first prepared run stopped before changing permissions and cleaned up its fixture. The agent opened Add, macOS requested authentication, and the user authenticated directly through the system prompt. The agent then selected the exact `dist/iTile.app` bundle in the app picker and reopened it with the trace flag. Both the enabled settings entry and iTile's granted status were confirmed before the successful experiment. No password was requested in chat or entered by the agent. The executable remained the trace-build hash above.
+
+The test used the owned 1.5-second window-role fixture fault. An AppleScript helper located only iTile's checkbox in advance, acknowledged readiness, and waited on its parent's input pipe. After the fixture's `window-read-begin` event, the parent released that helper to click the cached checkbox. This removed the slow settings-navigation step from the measured interval. The controller checked iTile's own menu for effective trust loss and captured only the opt-in trace category. The helper did not explicitly activate System Settings while the request was running.
+
+At 03:26:18, baseline was `app-1/window-1`, environment 0, sequence 1, known fixture frame `(200,922,420,158)`, standard/non-minimized/non-fullscreen/non-modal, size-settable=false, and ineligible. The delayed request's correlated evidence follows; all times are host monotonic uptime:
+
+| Event | Uptime | Evidence |
+| --- | --- | --- |
+| Worker started, request 2, app generation 1 | 83130.332997 | Captured environment 0 |
+| Fixture window-role accessor began | 83130.33402516667 | Owned one-shot pause |
+| Menu trust sample, request 2 | 83130.549053 | `trust=0`, followed by invalidation at 83130.549149 |
+| Fixture accessor ended | 83131.83511933334 | Server-side pause completed |
+| Worker finished, request 2, app generation 1 | 83131.843043 | Backend returned; excludes subsequent cleanup/delivery |
+| Main-thread completion, request 2 | 83131.843178 | Current environment 1, `trust=0` |
+| Discarded, request 2 | 83131.843193 | No presentation event for this request |
+
+The permission-loss sample lies strictly inside the 1.510046-second backend interval, 0.216056 seconds after start. No focus-invalidation or environment-change event occurred for this request in the captured trace. The displayed report remained `Accessibility permission is missing. Previous observations are stale.` This establishes permission-driven invalidation of the in-flight backend result at the sampled menu boundary; it does not prove that an individual synchronous IPC was interrupted or that every transient permission cycle is detectable.
+
+Restored only iTile's switch and waited for the app to report granted. Revalidate rejected the old comparison reference. Fresh recovery at 03:26:36 was `app-1/window-2`, environment 1, sequence 2, with the same fixture geometry and ineligible evidence. Request 4's backend interval was `83144.828359`–`83144.833782`, and completion observed trust=1 before presentation. Generic disposition events in this initial trace schema leave environment at a default zero; environment conclusions above use the worker and completion events that explicitly capture it.
+
+The fixture exited with status 0, the cached helper exited, and both filtered log streams stopped. Restarted iTile without the trace flag. A final menu check confirmed Accessibility granted and no trace-mode indicator; no fixture remained. The second monitor remained disconnected after the completed physical test. No source edits followed the already-passing 57-test verification; subsequent edits recorded evidence and limits only.
+
+Decision: accept the scoped observed mid-request permission-loss rejection/recovery and physical hotplug between-request checks. M2.2 now has the planned scoped lifecycle evidence, while universal compatibility, transient unobserved changes, supported eligibility, and live mutation safety are not established. Next task: consolidate the supported-scope/eligibility decision for focused enrollment before integrating any live control.
+
+
+## M2.3 focused eligibility policy — 2026-10-04 local (Oct 5 UTC)
+
+Consolidated the M2.2 evidence into [ADR 0003](decisions/0003-focused-eligibility.md). The intended initial ordinary-window scope is distinct from the currently enforceable production mutation scope, which remains empty. Added a pure `WindowEligibilityAssessment`: positive exclusions yield ineligible, otherwise unknown; missing evidence remains explicit alongside exclusions. The generic probe always retains desktop-visibility, native-tab, and nested-dialog requirements. Fixed report reason codes contain no application content; no eligible override or live enrollment path was added.
+
+Control projection now rejects missing/non-finite/non-positive geometry and overflowing edges, non-finite/backward/negative observation intervals, and zero worker sequences. Valid negative origins and zero-duration intervals remain supported. Five new tests cover these cases, retained scope requirements, positive exclusion precedence, and unsupported/malformed attribute evidence.
+
+Ran `scripts/format` and `scripts/verify`: 62 tests passed (51 core, 11 platform), debug targets built, strict formatting passed, and plist/script checks passed. These tests exercise values and fake workers; no new real-window acceptance, visibility proof, performance bound, or mutation safety is claimed. The installed trace-build bundle was not repackaged or relaunched, so this source report extension has not received a new manual UI check. Existing Accessibility permission and the trace-off running app were left in place.
+
+Next task: bounded nested-dialog evidence on the existing dedicated worker, preserving unknown results for incomplete/unsupported scans. Tab and visibility proof, eligible scope, coordinator integration, and live setters remain gated.
+
+## M2.4 structural scan: scoped fixture and native acceptance — 2026-10-05 UTC (Oct 4 local)
+
+Environment: macOS 27.0.1 (26A434), arm64, single display. The owned fixture was extended using public `NSAccessibilityElement` objects and explicit stdin scenarios. `scripts/package-ax-fixture` packages separate fixture/control bundles so two actual per-application workers can be exercised. Synthetic trees deliberately replace the fixture window's child graph; they are not models of every native application's hierarchy. Native sheets use `NSWindow.beginSheet` instead.
+
+Added an opt-in `--manual-probe` local stdin driver and `--show-probe-report` startup window to iTile. Fixed test commands can target the two owned bundle identifiers or TextEdit and use the existing production `WindowProbe.inspectFocused` backend. These backend samples explicitly bypass the app's foreground delivery coordinator, clear historical references, retain trust/pause/environment/process checks, and label that limit in their reports. Ordinary `inspect`/`revalidate` commands call the existing menu handlers. Reports are exported only on the driver's explicit `report` command. No listener, periodic inspection, arbitrary PID input, AX setter, focus action on another app, or eligible projection was added. Normal launches have no stdin driver or stdout report export.
+
+Initial requests selected the terminal rather than the owned fixture. The UI service could attach to the visible diagnostic window but could not reliably reach iTile's status menu or establish the desired foreground application. Those attempts do not count as fixture or TextEdit passes. A delayed foreground attempt also selected the terminal. Targeted backend samples were used to isolate the actual structural reader from this UI-control limitation.
+
+### Observed structural samples
+
+The parent controller retained each child's stdin/stdout, waited for scenario readiness and backend completion, then requested the redacted report. Root frame for the synthetic cases was `(200,922,420,158)`; its size capability is deliberately unsupported, so `sizeNotSettable` remains alongside structural exclusions.
+
+| Scenario | Observed nested summary | Eligibility consequence |
+| --- | --- | --- |
+| Explicit ordinary synthetic tree | 0 sheets, 0 dialogs, 2 nodes, complete | Ineligible for size capability; all three generic scope requirements remain |
+| Direct synthetic sheet | 1 sheet, 0 dialogs, 2 nodes, complete; direct sheet count 1 | `sheetPresent`, once |
+| Sheet beneath a group | 1 sheet, 0 dialogs, 3 nodes, complete; direct sheet count 0 | `sheetPresent` |
+| Window with dialog subrole | 0 sheets, 1 dialog, 3 nodes, complete | `dialogPresent` |
+| Window with system-dialog subrole | 0 sheets, 1 dialog, 3 nodes, complete | `dialogPresent` |
+| Group with 80 child links | 1 sheet, 0 dialogs, 64 nodes, `nodeLimit` | Positive sheet exclusion retained despite truncation |
+| Deep chain with sheet beyond the depth boundary | 0 sheets, 0 dialogs, 7 nodes, `depthLimit` | No absence proof or scope clearance |
+| Self-repeated group link | 0 sheets, 0 dialogs, 2 nodes, `cycle` | No absence proof or scope clearance |
+| Child accessors delayed by 0.08 seconds | 1 sheet, 0 dialogs, 16 nodes, `budget` | Positive sheet exclusion retained; observed request approximately 1.06–1.09 seconds, not a hard deadline |
+| Owned native AppKit sheet | Focused element became `AXSheet`; 2 nodes, complete | `nonWindowRole`; missing sheet state attributes remain explicit |
+| Cancel owned native sheet | Ordinary window returned, new token; 7 nodes, complete | Ineligible for size capability; generic scope remains unproven |
+
+A first budget report was requested before completion and still displayed the preceding cycle sample. It is not counted. A completion-synchronized repetition produced the budget result above. A synthetic hide-on-child-read attempt ran while the fixture was not foreground; the sampled focused handle remained equal. It does not establish foreground focus-loss rejection and illustrates why sampled AX equality alone cannot prove lifecycle safety.
+
+### Synchronized pause and two-worker isolation
+
+A temporary local parent controller waited for the fixture's `nested-stall-begin` event before sending further commands; it did not enumerate the armed fixture with a second AX client. Times below are host monotonic uptime. The server accessor deliberately paused only the owned fixture for 1.5 seconds; individual production client calls retained their 0.2-second timeout.
+
+| Pause event | Uptime |
+| --- | --- |
+| Nested accessor began | 86250.17962808334 |
+| App processed Pause | 86250.18011929168 |
+| Backend sample discarded at app delivery | 86250.58990450001 |
+| Nested accessor ended | 86251.68068241667 |
+
+Pause arrived inside the accessor interval, and the completion was discarded while the accessor was still running. The report retained the paused message. Resume followed by a new ordinary sample recovered with a new token and complete structural summary. This proves the scoped manual-driver pause gate, not direct status-menu interaction or cancellation of an in-flight IPC.
+
+For isolation, the delayed fixture accessor ran from `86251.71876220834` to `86253.21969241668`. A separately packaged control fixture's production worker completed at `86251.74545833335`, with a healthy 7-node structural scan. The delayed sample was superseded and discarded at `86252.12796891667`. The control worker responded before server recovery; no generic scheduler or latency guarantee follows from this single pair.
+
+An earlier isolation attempt tried the normal foreground handler while iTile itself was foreground; it rejected source selection and is not counted. A later attempt to repeat cases after unsynchronized native commands consumed stale events in the disposable parent controller and stopped with a queue timeout; both owned children and iTile exited normally. That controller bookkeeping failure is not a platform pass or an AX failure. Successful samples above used completion-synchronized requests without that mixed command sequence.
+
+### Native TextEdit sheet
+
+Created a disposable blank TextEdit document through the UI and opened its native Print panel. No printing, saving, or text entry occurred. A targeted backend sample reported `AXSheet`, unknown subrole/minimized/fullscreen/modal attributes (AX -25205), frame `(135,160,780,637)`, 64 examined nodes, and `nodeLimit`. Eligibility was ineligible with `nonWindowRole`, and all missing state/scope reasons remained. The scanner requested structural metadata only, not print settings or document contents.
+
+After cancelling the panel through the UI, the ordinary document window returned with a new token, frame `(232,92,586,488)`, 47 nodes, and a complete sample. Eligibility stayed unknown with `currentDesktopVisibility`, `nativeTabSafety`, and `nestedDialogSafety`. The blank document was closed, returning TextEdit to its initial Open panel. This is one representative native sheet observation, not proof of all sheets/dialogs or parent-window relationships.
+
+### Verification and remaining scope
+
+Source verification passes 71 tests (60 core, 11 platform), strict Swift formatting, debug builds, three plist checks, and shell syntax including the new fixture packaging script. Release app/fixture packaging and strict ad-hoc signature verification succeeded. Intermediate AppKit actor-isolation warnings were corrected by keeping fault state in a main-actor value object, accessed only on a main-thread callback. No unchecked AX handle sendability was introduced.
+
+Accept the scoped positive detection, explicit limits/budget/cycle outcomes, native-sheet exclusion, synchronized pause recovery, and separate-worker response observations. Direct foreground/menu acceptance with the new scanner, sheet-tree mutation during a scan, and nested-read-specific mid-request permission/focus rejection remain pending. Earlier M2.2 lifecycle evidence remains scoped to its earlier reader and is not silently promoted to new nested-scan coverage. Structural completeness does not close lifecycle, native-tab, or visibility proof requirements. Production mutation scope remains empty.
+
+### Permission-context preflight and final recovery
+
+The user authenticated directly in macOS when changing only iTile's existing access; no credentials were entered or collected by the agent. The settings switch became off. However, an iTile executable launched directly as a terminal child still reported trusted=true. This launch context did not establish effective revocation; inherited responsible-process access is a plausible explanation, not a separately traced TCC conclusion. Do not use terminal-child trust to validate iTile's own bundle grant.
+
+Launched the final app through public LaunchServices (`open -W --stdin` / `--stdout`) with a private local FIFO and redacted output file. It reported `manual-ready trusted=false`; a `status` sample at uptime `87166.31004745833` confirmed false and the explicit fixture request was blocked. This was an untrusted-start check, not loss during an outstanding request or invalidation of a previously stored token in the same process.
+
+Toggling the old settings entry back on did not restore effective trust. Refreshed only the same exact `dist/iTile.app` entry by removing its stale entry and selecting the rebuilt bundle in the native picker; no other app permission changed. The still-running LaunchServices-launched app reported trusted=true at `87308.58233141668`. A fresh nested-sheet sample ran at `87312.056740625`–`87312.07991558334`: `app-1/window-1`, environment 4, sequence 1, three nodes, one sheet, complete, and `sizeNotSettable, sheetPresent` exclusions. This accepts scoped blocked-start/recovery with the final bundle's own permission context. Nested-read-specific in-flight revocation remains pending.
+
+Final executable hashes: iTile `e83729432ef8b642b8617797002b8813798889081cbfdcccfee15bd4f20e0fd9`; fixture `93a2a356c7f51787f74582943322dc9118e2c72041c4e1b00a2909ad43f69e7c`. The earlier synthetic/native and synchronized race samples used intermediate verified manual-driver builds with the same structural backend; the final bundle additionally carries the visible manual-mode indicator and clears historical comparison references for targeted samples. Its actual LaunchServices nested-sheet recovery was checked after those edits. Final `scripts/verify` passed without compiler warnings; no source edits followed it.
+
+The LaunchServices bridge and owned fixture exited with status 0. Other disposable controller runs also stopped both fixture processes and iTile. Relaunched iTile normally without manual, startup-report, or trace flags. Its existing permission is restored. TextEdit's disposable blank document/Print panel was closed without saving or printing. No production window mutation or keyboard capture was enabled.

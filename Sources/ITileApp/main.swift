@@ -26,6 +26,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     menu.delegate = self
     menu.addItem(
       NSMenuItem(title: "M1 read-only probe — no window control", action: nil, keyEquivalent: ""))
+    if CommandLine.arguments.contains("--manual-probe") {
+      menu.addItem(
+        NSMenuItem(title: "Manual read-only probe driver enabled", action: nil, keyEquivalent: ""))
+    }
+    if FocusedTrace.enabled {
+      menu.addItem(
+        NSMenuItem(title: "Focused request tracing enabled", action: nil, keyEquivalent: ""))
+      FocusedTrace.emit("traceEnabled", request: 0)
+    }
     menu.addItem(permissionItem)
     add("Enable Accessibility for inspection…", action: #selector(requestPermission), to: menu)
     let inspect = NSMenuItem(title: "Inspect application", action: nil, keyEquivalent: "")
@@ -40,8 +49,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     menu.addItem(
       NSMenuItem(
         title: "Quit iTile", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+    // Explicit manual-test entry point for UI tools that require an initial
+    // window to attach to this accessory app. It performs no inspection.
+    if CommandLine.arguments.contains("--show-probe-report") {
+      showReport(
+        "Read-only probe ready. Choose an inspection from the iTile menu bar. No window control.")
+    }
     item.menu = menu
     statusItem = item
+    if CommandLine.arguments.contains("--manual-probe") { startManualProbeInput() }
     let workspace = NSWorkspace.shared.notificationCenter
     for name in [
       NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didWakeNotification,
@@ -60,6 +76,98 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       name: NSApplication.didChangeScreenParametersNotification, object: nil)
   }
 
+  /// Explicit local test driver for the same handlers used by the menu. It
+  /// accepts only fixed commands from its parent's stdin, never network input.
+  /// Reports are exported only on an explicit `report` command in this mode.
+  private func startManualProbeInput() {
+    let emit: @Sendable (String) -> Void = { text in
+      FileHandle.standardOutput.write(Data((text + "\n").utf8))
+    }
+    emit("manual-ready trusted=\(AccessibilityStatus.isTrusted)")
+    Thread.detachNewThread { [weak self] in
+      while let command = readLine() {
+        guard
+          [
+            "inspect", "fixture", "fixture-control", "native-editor", "revalidate", "pause",
+            "resume", "status",
+            "report", "quit",
+          ]
+          .contains(command)
+        else { continue }
+        DispatchQueue.main.async { [weak self] in
+          guard let self else { return }
+          switch command {
+          case "inspect": self.inspectFocused()
+          case "fixture":
+            self.inspectManualSample(identifier: "local.itile.axfixture", label: "owned fixture")
+          case "fixture-control":
+            self.inspectManualSample(
+              identifier: "local.itile.axfixture.control", label: "owned control fixture")
+          case "native-editor":
+            self.inspectManualSample(identifier: "com.apple.TextEdit", label: "TextEdit")
+          case "revalidate": self.revalidateFocused()
+          case "pause", "resume":
+            if self.paused != (command == "pause"),
+              let item = self.statusItem?.menu?.items.first(where: {
+                $0.action == #selector(self.togglePause(_:))
+              })
+            {
+              self.togglePause(item)
+            }
+          case "status":
+            self.menuWillOpen(NSMenu())
+            emit("manual-status trusted=\(AccessibilityStatus.isTrusted) paused=\(self.paused)")
+          case "report":
+            emit("manual-report-begin")
+            emit(self.reportView?.string ?? "No report.")
+            emit("manual-report-end")
+          case "quit": NSApp.terminate(nil)
+          default: break
+          }
+          emit("manual-command \(command) \(ProcessInfo.processInfo.systemUptime)")
+        }
+      }
+      DispatchQueue.main.async { NSApp.terminate(nil) }
+    }
+  }
+
+  /// Lab-only targeted backend read. Only the three fixed stdin commands above
+  /// call this; it deliberately does not test the foreground coordinator.
+  private func inspectManualSample(identifier: String, label: String) {
+    guard !paused, AccessibilityStatus.isTrusted else {
+      invalidateReport("Manual backend sample blocked: paused or Accessibility permission missing.")
+      return
+    }
+    let fixtures = NSWorkspace.shared.runningApplications.filter {
+      $0.bundleIdentifier == identifier && !$0.isTerminated
+    }
+    guard fixtures.count == 1, let app = fixtures.first, let probe = worker(for: app) else {
+      showReport("Manual backend sample requires exactly one running \(label) process.")
+      return
+    }
+    epoch += 1
+    focusedRequest = nil
+    focusedCandidate = nil
+    let request = epoch
+    let environment = environmentEpoch
+    let accepted = probe.inspectFocused(environmentEpoch: environment) { [weak self] result in
+      Task { @MainActor in
+        guard let self else { return }
+        let current =
+          self.epoch == request && !self.paused && !app.isTerminated
+          && self.environmentEpoch == environment && AccessibilityStatus.isTrusted
+        let phase = current ? "finished" : "discarded"
+        FileHandle.standardOutput.write(
+          Data("manual-fixture-\(phase) \(request) \(ProcessInfo.processInfo.systemUptime)\n".utf8))
+        guard current else { return }
+        self.showReport(
+          "Manual backend sample: \(label); foreground delivery coordinator not exercised.\n"
+            + result.report)
+      }
+    }
+    if !accepted { showReport("Manual backend worker busy; no extra request queued.") }
+  }
+
   private func add(_ title: String, action: Selector, to menu: NSMenu) {
     let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
     item.target = self
@@ -67,10 +175,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   }
 
   func menuWillOpen(_ menu: NSMenu) {
+    let trusted = AccessibilityStatus.isTrusted
+    FocusedTrace.emit("menuTrust", request: epoch, environment: environmentEpoch, trusted: trusted)
     permissionItem.title =
-      AccessibilityStatus.isTrusted
+      trusted
       ? "Accessibility: granted" : "Accessibility: required for inspection"
-    if !AccessibilityStatus.isTrusted {
+    if !trusted {
       invalidateReport("Accessibility permission is missing. Previous observations are stale.")
     }
     applicationsMenu.removeAllItems()
@@ -117,6 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   }
 
   @objc private func environmentChanged() {
+    FocusedTrace.emit("environmentChanged", request: epoch, environment: environmentEpoch)
     invalidateReport(
       "Desktop/display or sleep state changed. Previous observations are stale; inspect again.")
   }
@@ -124,6 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   @objc private func frontmostChanged() {
     activationRevision += 1
     if focusedRequest != nil {
+      FocusedTrace.emit("focusInvalidated", request: epoch, environment: environmentEpoch)
       epoch += 1
       focusedRequest = nil
       focusedCandidate = nil
@@ -133,6 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   }
 
   private func invalidateReport(_ reason: String) {
+    FocusedTrace.emit("invalidated", request: epoch, environment: environmentEpoch)
     focusedRequest = nil
     focusedCandidate = nil
     statusItem?.button?.toolTip = nil
@@ -233,10 +346,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       activationRevision: activationRevision)
     let displays = displayReport().replacingOccurrences(of: "iTile M1", with: "iTile M2.2")
     focusedRequest = request
-    let accepted = probe.inspectFocused(environmentEpoch: environmentEpoch, expected: expected) {
+    let appGeneration = probe.token.generation
+    let requestEnvironment = environmentEpoch
+    let trace: (@Sendable (FocusedProbeTraceEvent) -> Void)?
+    if FocusedTrace.enabled {
+      trace = { event in
+        FocusedTrace.emit(
+          event.phase.rawValue, request: request, app: appGeneration,
+          environment: requestEnvironment, uptime: event.uptime)
+      }
+    } else {
+      trace = nil
+    }
+    let accepted = probe.inspectFocused(
+      environmentEpoch: environmentEpoch, expected: expected, trace: trace
+    ) {
       [weak self] result in
       Task { @MainActor in
-        guard let self, self.epoch == request, self.focusedRequest == request else { return }
+        guard let self else { return }
+        FocusedTrace.emit(
+          "completion", request: request, app: appGeneration,
+          environment: self.environmentEpoch,
+          trusted: FocusedTrace.enabled ? AccessibilityStatus.isTrusted : nil)
+        guard self.epoch == request, self.focusedRequest == request else {
+          FocusedTrace.emit("discarded", request: request, app: appGeneration)
+          return
+        }
         self.focusedRequest = nil
         let front = NSWorkspace.shared.frontmostApplication
         let sameProcess =
@@ -249,6 +384,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             environmentEpoch: self.environmentEpoch, activationRevision: self.activationRevision,
             trusted: AccessibilityStatus.isTrusted, paused: self.paused)
         else {
+          FocusedTrace.emit("contextRejected", request: request, app: appGeneration)
           self.focusedCandidate = nil
           self.statusItem?.button?.toolTip = "Focused result stale. Inspect again."
           self.reportView?.string = "Focused result stale. Inspect again."
@@ -263,6 +399,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
           self.focusedCandidate = evidence.token
         }
         self.statusItem?.button?.toolTip = nil
+        FocusedTrace.emit("presented", request: request, app: appGeneration)
         self.showReport(
           displays + "\n\n" + result.report
             + "\nFrontmost app checked before presentation. Opening this report can change focus; revalidation requires returning to the source window."
@@ -270,9 +407,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       }
     }
     if accepted {
+      FocusedTrace.emit(
+        "admitted", request: request, app: appGeneration, environment: environmentEpoch)
       // Do not show/activate the report until the final frontmost check.
       statusItem?.button?.toolTip = "Inspecting focused window…"
     } else {
+      FocusedTrace.emit("busy", request: request, app: appGeneration)
       focusedRequest = nil
       showReport("This application's worker is busy. No focused request was queued.")
     }

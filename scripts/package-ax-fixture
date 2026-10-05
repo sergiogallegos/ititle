@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")/.."
+swift build -c release --product iTileAXFixture
+binary_dir=$(swift build -c release --show-bin-path)
+app_dir="dist/iTile AX Fixture.app"
+mkdir -p "$app_dir/Contents/MacOS"
+cp "$binary_dir/iTileAXFixture" "$app_dir/Contents/MacOS/iTileAXFixture"
+cp Resources/AXFixture-Info.plist "$app_dir/Contents/Info.plist"
+codesign --force --sign - "$app_dir"
+codesign --verify --strict --verbose=2 "$app_dir"
+printf 'Created %s; run its executable with --focused-probe --nested-probe and retain stdin.\n' "$app_dir"
+control_dir="dist/iTile AX Control Fixture.app"
+mkdir -p "$control_dir/Contents/MacOS"
+cp "$binary_dir/iTileAXFixture" "$control_dir/Contents/MacOS/iTileAXFixture"
+cp Resources/AXFixture-Info.plist "$control_dir/Contents/Info.plist"
+plutil -replace CFBundleIdentifier -string local.itile.axfixture.control "$control_dir/Contents/Info.plist"
+plutil -replace CFBundleName -string "iTile AX Control Fixture" "$control_dir/Contents/Info.plist"
+codesign --force --sign - "$control_dir"
+codesign --verify --strict --verbose=2 "$control_dir"
+printf 'Created %s for separate-worker isolation checks.\n' "$control_dir"

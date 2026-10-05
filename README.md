@@ -12,7 +12,9 @@ The goal is a small tool that arranges ordinary windows predictably, responds qu
 - A pure binary split layout engine with geometry validation and unit tests.
 - A pure control-state model with structured observations and simulated per-setter admission; not connected to live window control.
 - A menu-bar read-only probe with explicit per-application inspection, permission onboarding, pause, and Quit.
-- Explicit focused-window inspection and historical-token revalidation, with scoped focus-loss, permission recovery, and desktop invalidation checks; mid-read permission loss and physical display-change coverage remain open.
+- Explicit focused-window inspection and historical-token revalidation, with scoped focus-loss, mid-request permission-loss, desktop invalidation, and physical display hotplug checks. Eligibility remains unknown or ineligible.
+- A pure focused eligibility assessment with explicit exclusion/missing-evidence reasons and validation before projecting control records. No eligible production scope is enabled.
+- Bounded read-only nested sheet/dialog detection during focused inspection, with explicit incomplete outcomes; scoped fixture/native-sheet checks are recorded, with lifecycle acceptance still partial.
 - Dedicated per-application AX threads, session-local window tokens, typed unknown/error results, and redacted diagnostic reports.
 - Window roles, minimized/fullscreen state, frame capabilities, screen geometry, and uncorrelated on-screen CG bounds. It never moves windows or captures keyboard input.
 - Local app packaging and architecture, decision, testing, and contribution documentation.
@@ -57,6 +59,8 @@ docs/                   Product, architecture, decisions, and research
 - [Control contracts](docs/control-contracts.md)
 - [M2.1 control model and simulation limits](docs/m2-control-model.md)
 - [M2.2 focused inspection and manual acceptance](docs/m2-focused-probe.md)
+- [M2.4 bounded nested-dialog evidence](docs/m2-nested-dialogs.md)
+- [M2.3 focused eligibility decision](docs/decisions/0003-focused-eligibility.md)
 - [Read-only probe usage and manual checks](docs/m1-probe.md)
 - [M1 readiness and M2.1 acceptance criteria](docs/m1-readiness.md)
 - [P3 delay/timeout lab](docs/p3-lab.md)

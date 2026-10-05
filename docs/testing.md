@@ -4,7 +4,11 @@ Run `scripts/format` after Swift edits. Run `scripts/verify` for strict official
 
 ## Current automated coverage
 
-The latest recorded verification passed 57 tests (46 core, 11 platform), including 26 control-model scenarios for admission, invalidation, bounded pending work, and late fake-worker results, plus eight focused-evidence/delivery/worker tests. Existing coverage includes nested geometry and gap conservation; invalid geometry and duplicate rejection; token retention/retirement and process generations; coordinate round trips; latency summaries; incomplete sheet evidence; dedicated worker ownership, isolation, bounded admission, stop and reuse; and fixture pipe short-message delivery/EOF. See [validation](validation.md) for the run history. No AX mutation, desktop integration, or performance claim is covered by these tests.
+The latest recorded verification passed 62 tests (51 core, 11 platform), including 26 control-model scenarios for admission, invalidation, bounded pending work, and late fake-worker results, plus thirteen focused-evidence/delivery/worker tests. Existing coverage includes nested geometry and gap conservation; invalid geometry and duplicate rejection; token retention/retirement and process generations; coordinate round trips; latency summaries; incomplete sheet evidence; dedicated worker ownership, isolation, bounded admission, stop and reuse; and fixture pipe short-message delivery/EOF. See [validation](validation.md) for the run history. No AX mutation, desktop integration, or performance claim is covered by these tests.
+
+Five M2.3 value tests cover retained unsupported-scope requirements, exclusions alongside missing evidence, unsupported/malformed reads, invalid geometry including edge overflow, and invalid observation intervals/sequences. Valid negative origins and zero-duration intervals remain projectable. See the [eligibility decision](decisions/0003-focused-eligibility.md).
+
+The focused stopped-worker test additionally verifies opt-in trace start before backend entry, trace finish despite suppressed result delivery, and no execution trace for rejected requests. Real lifecycle timing requires the separately enabled [focused request trace](m2-focused-probe.md#opt-in-request-lifecycle-trace); fake-worker success does not prove permission or desktop event ordering on macOS.
 
 ## Planned fake-platform tests
 
@@ -42,3 +46,5 @@ Before frame mutation, execute P1–P4 in [platform experiments](platform-experi
 Test ordered resize/focus/swap commands separately from coalesced absolute frame targets. Exercise finite bounds/depth limits, rounding, outer gaps, leaf removal, constraint rejection, and deterministic directional focus. Config tests must cover unknown fields/commands, normalized duplicate chords in the bindings list, malformed reload retention, and disabled keyboard defaults. Input tests cover balanced down/up handling and queue rejection passing events through.
 
 Control state/admission interleavings are now covered by the M2.1 simulation tests. Platform write, input, configuration, and broader layout-policy tests remain planned. Neither these simulations nor the existing probe tests establish real write safety.
+
+Bounded nested-dialog sampling has deterministic traversal and eligibility tests. Scoped live fixture/native-sheet checks are recorded; foreground and nested-read lifecycle checks remain separate and partial; see [M2.4 acceptance](m2-nested-dialogs.md). Unit success does not establish that application AX trees expose all dialogs or sheets.

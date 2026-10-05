@@ -2,7 +2,7 @@
 
 Implemented in source on 2026-10-04. Automated verification passes; real-window acceptance is **partial**, with scoped Chrome, Finder, TextEdit, sheet/tab, and pause observations recorded in [validation](validation.md). This is a diagnostic path, not enrollment or live tiling. The M2.1 reducer is still disconnected from the app's platform observations and never receives eligible evidence from this path.
 
-The updated app has been packaged, signature-verified, launched, and granted Accessibility by the user. Ordinary-window revalidation, conservative rejection cases, synchronized focus-loss rejection, observed permission loss/recovery, and desktop invalidation have been observed. A public Space notification was correlated inside a delayed fixture accessor, with the client-timing limits described below. Effective permission loss during a read and focused physical display changes remain open. Earlier inconclusive attempts are retained in the validation history.
+The updated app has been packaged, signature-verified, launched, and granted Accessibility by the user. Ordinary-window revalidation, conservative rejection cases, synchronized focus-loss rejection, observed permission loss/recovery, and desktop invalidation have been observed. A public Space notification was correlated inside a delayed fixture accessor, with the client-timing limits described below. Physical display connection/disconnection also has scoped between-request invalidation and recovery evidence. Opt-in client tracing also established observed permission loss inside a backend request, discarded completion, and fresh recovery. M2.3 now records the [supported-scope decision](decisions/0003-focused-eligibility.md) and implements conservative reason codes; proving an eligible scope remains a gate; these read-only results do not authorize mutation. Earlier inconclusive attempts are retained in the validation history.
 
 ## Use after packaging
 
@@ -18,9 +18,11 @@ The existing **Inspect application**, Copy, Pause inspections, and Quit commands
 
 ## Evidence and limits
 
-`FocusedWindowEvidence` contains the process-scoped window token, environment epoch, focused-worker sequence, start/end monotonic times, role/subrole, minimized/fullscreen/modal flags, frame, frame capabilities, direct-sheet count/completeness, destruction-notification status, focused-window check result, and optional expected-token comparison. Unavailable AX attributes preserve their error codes; invalid types stay unknown. Failed geometry cannot become a `WindowObservation`.
+`FocusedWindowEvidence` contains the process-scoped window token, environment epoch, focused-worker sequence, start/end monotonic times, role/subrole, minimized/fullscreen/modal flags, frame, frame capabilities, direct-sheet count/completeness, destruction-notification status, focused-window check result, and optional expected-token comparison. Unavailable AX attributes preserve their error codes; invalid types stay unknown. Missing or malformed geometry, non-finite/backward/negative intervals, and zero worker sequences cannot become a `WindowObservation`. Valid negative origins and zero-duration intervals are allowed.
 
 The structured sheet reader is shared with M1: it reads at most 16 direct child roles, never sheet contents. A positive sheet count excludes the window even if the scan is incomplete. Zero direct sheets, modal=false, and a standard role do not prove absence of nested dialogs or safe tab/desktop identity. The derived control observation is therefore always **unknown or ineligible**, never eligible.
+
+The M2.3 `WindowEligibilityAssessment` separates `eligibility-exclusions` from `eligibility-unproven` in the focused report. Positive exclusions dominate; missing evidence remains listed. Successful generic reads retain `currentDesktopVisibility`, `nativeTabSafety`, and `nestedDialogSafety`, with no eligible branch or opt-in override. This source change has automated coverage; the installed trace-build bundle has not been replaced for this checkpoint.
 
 Focused requests share the existing single-admission mailbox and dedicated per-app thread with full reports. There is no second worker or periodic scan. Each actual AX handle gets the existing experimental 0.2-second timeout; the five-second budget remains soft. Window references are bounded to the existing 64-element limit. New focused windows join the attachment's registry; a later full inspection can retire absent entries. Unsupported destruction observation expires that element's token before the next request.
 
@@ -34,9 +36,9 @@ Public APIs were checked against the installed SDK's `AXAttributeConstants.h` an
 
 Six new pure tests cover unknown evidence and the control-model gate, positive exclusions including sheets, incomplete/missing attributes, token mismatch despite equal geometry, inspector/away-and-back activation, and process/epoch/permission/pause delivery checks. Two new production-worker tests verify focused/full requests share the bounded mailbox, stopped focused reads do not deliver, typed results and expected tokens survive dispatch, and backend operations remain on the same dedicated thread. Existing sheet and worker tests continue to pass.
 
-`scripts/verify` passed strict Swift formatting, all 57 tests (46 core, 11 platform), debug builds, plist lint, and script syntax. These are fake-backend and value-model tests; they do not establish real focus-notification support, UI behavior, or AX eligibility.
+The M2.2 checkpoint passed 57 tests (46 core, 11 platform). The M2.3 checkpoint added five policy/projection tests; `scripts/verify` passed strict Swift formatting, all 62 tests (51 core, 11 platform), debug builds, plist lint, and script syntax. These are fake-backend and value-model tests; they do not establish real focus-notification support, UI behavior, or AX eligibility.
 
-## Remaining manual focused-probe acceptance
+## Manual focused-probe acceptance and limits
 
 Exact tested versions and timestamps are in the validation log. Scoped normal/rejection checks have been observed; the remaining race checks are separate from earlier M1 evidence:
 
@@ -65,8 +67,29 @@ The permission round trip first established a fixture observation, disabled only
 
 A native desktop round trip cleared the reference and advanced the environment epoch. The report's AX window was unavailable on the other desktop, so checks read it after returning without activating it on the remote desktop. Revalidation required a fresh read, which issued a new window token.
 
+The user-assisted physical display round trip likewise cleared the reference on both connection and disconnection. Fresh reports observed one display, then two with negative external-display coordinates, then one again. The same fixture received a new token at each environment transition. This was between requests and used two displays at the same reported scale while connected; it does not establish mixed-scale or mid-call hotplug behavior. Exact geometry and epochs are in the validation log.
+
 For a delayed-read variant, `arm-window-stall` in `--focused-probe` mode arms a one-shot 1.5-second pause in the fixture window's public `accessibilityRole()` accessor. It emits `window-stall-armed`, then `window-read-begin`/`window-read-end` around the pause. It does not change focus or the desktop itself. This delays a window read after focused-window acquisition; iTile's individual AX calls still have 0.2-second timeouts. A separate temporary Swift/AppKit process observed only public `NSWorkspace.activeSpaceDidChangeNotification` events and emitted host-uptime timestamps. The controller waited for the fixture's begin event, switched right one desktop, and returned after recovery.
 
 The observed Space event fell inside the fixture accessor interval. After returning, iTile retained the environment-stale message, rejected the historical reference, and recovered with a new token. This establishes a real desktop transition during server-side accessor execution and conservative recovery. It does **not** establish that the original client IPC was still waiting, trace the production worker's completion instant, or isolate the environment guard from simultaneous activation invalidation. No other client deliberately read the armed fixture; as with the focus-loss fixture, caller identity is not authenticated by these event messages. Both disposable processes were stopped after the check.
 
-No extra unchanged-window samples are needed for the completed scoped M1/M2.2 checks. Focused-platform acceptance remains a gate before any live control integration; nested-dialog, tab, and visibility exclusions still need enforceable supported-scope decisions.
+No extra unchanged-window samples are needed for the completed scoped M1/M2.2 checks. Focused-platform acceptance remains a gate before any live control integration; the M2.3 decision keeps nested-dialog, tab, and visibility requirements unproven until enforceable evidence exists.
+
+### Opt-in request lifecycle trace
+
+Launch the packaged app with `--trace-focused-probe` only for an explicit timing experiment. Quit the previous instance first; launch arguments do not update an already-running app. The menu shows **Focused request tracing enabled**. Start a filtered log stream before triggering a read:
+
+```sh
+/usr/bin/log stream --level info --style compact --predicate 'subsystem == "local.itile.app" AND category == "FocusedProbeTrace"'
+open dist/iTile.app --args --trace-focused-probe
+```
+
+The payload records only phase, request number, session-local app generation, environment epoch, trust (`1`/`0`, or `-1` when not sampled), and host monotonic uptime. No window metadata or process ID is logged. These opt-in events go to macOS unified logging, which controls retention; they are separate from the memory-only diagnostic report. Quit and relaunch without the flag after the experiment.
+
+`workerStarted` and `workerFinished` bracket the backend on its dedicated thread. Finish is before autorelease cleanup and main-thread delivery, not the end of the whole request. An admitted request can start before the main thread logs `admitted`, because that event is emitted after the mailbox method returns. No worker events are emitted for rejected requests. A backend finish event can still be emitted after stop, while normal result delivery remains suppressed. Logging is disabled by default, and the optional worker callback adds no polling or extra AX calls.
+
+`menuTrust` records the trust value used by the menu. `completion` records main-thread receipt and, only in trace mode, a trust sample; `discarded`, `contextRejected`, or `presented` identifies subsequent disposition. `focusInvalidated`, `environmentChanged`, and `invalidated` expose lifecycle boundaries without recording human-readable window information. Epochs can advance while a backend is still running; correlate worker events using their captured request number and app generation. Trust observations remain discrete samples, not a continuous permission monitor. Require an observed `trust=0` timestamp strictly inside the matched backend interval before claiming effective permission loss during that interval. Record simultaneous focus/environment invalidation rather than attributing rejection to a single guard without evidence.
+
+Field scope matters: worker/admission events carry the request's captured environment; completion and lifecycle/trust events carry the main thread's observed environment. Generic disposition markers (`discarded`, `contextRejected`, `presented`, `busy`) leave the environment field at its default zero; use their matching completion/admission event for environment evidence. App generation zero on global events means no specific app is identified. Do not treat these default fields as additional state observations.
+
+The 2026-10-05 03:26 UTC permission experiment met the backend-interval criterion. A helper located only iTile's permission checkbox before the experiment, waited for the fixture's armed read to begin, then disabled access without an explicit application activation. `menuTrust trust=0` was logged strictly between `workerStarted` and `workerFinished` for request 2. Main-thread completion still observed trust=0 and was discarded; no presentation or focus-invalidation event was recorded for that request. Access restoration required a fresh inspection and produced a new token. The log distinguishes actual backend lifetime from the longer server accessor and from per-call timeouts. This is one observed revocation with explicit menu trust sampling, not a guarantee that transient revoke/regrant cycles will be noticed or that a single synchronous IPC was interrupted. Trace mode and both log streams were disabled afterward.

@@ -15,6 +15,7 @@ public struct FocusedWindowEvidence: Sendable {
   public let sizeSettable: ProbeRead<Bool>
   public let directSheetCount: ProbeRead<Int>
   public let directSheetScanComplete: Bool
+  public let nestedDialogs: NestedDialogScanSummary
   public let destructionNotification: ProbeRead<Bool>
   public let focusedWindowUnchanged: ProbeRead<Bool>
   public let expectedToken: WindowToken?
@@ -26,8 +27,9 @@ public struct FocusedWindowEvidence: Sendable {
     frame: ProbeRead<Rect>, positionSettable: ProbeRead<Bool>, sizeSettable: ProbeRead<Bool>,
     directSheetCount: ProbeRead<Int>, directSheetScanComplete: Bool,
     destructionNotification: ProbeRead<Bool>, focusedWindowUnchanged: ProbeRead<Bool>,
-    expectedToken: WindowToken?
+    expectedToken: WindowToken?, nestedDialogs: NestedDialogScanSummary = .notScanned
   ) {
+    self.nestedDialogs = nestedDialogs
     self.token = token
     self.environmentEpoch = environmentEpoch
     self.workerSequence = workerSequence
@@ -50,24 +52,16 @@ public struct FocusedWindowEvidence: Sendable {
 
   public var expectedWindowMatches: Bool? { expectedToken.map { $0 == token } }
 
-  /// Positive exclusions are useful; successful reads cannot prove nested-sheet,
-  /// native-tab, or desktop visibility safety. This path NEVER emits eligible.
-  public var eligibility: ControlEligibility {
-    if case .value(let value) = role, value != "AXWindow" { return .ineligible }
-    if case .value(let value) = subrole, value != "AXStandardWindow" { return .ineligible }
-    for flag in [minimized, fullscreen, modal] {
-      if case .value(true) = flag { return .ineligible }
-    }
-    for capability in [positionSettable, sizeSettable, focusedWindowUnchanged] {
-      if case .value(false) = capability { return .ineligible }
-    }
-    if case .value(let count) = directSheetCount, count > 0 { return .ineligible }
-    if expectedWindowMatches == false { return .ineligible }
-    return .unknown
+  public var eligibilityAssessment: WindowEligibilityAssessment {
+    WindowEligibilityAssessment(evidence: self)
   }
 
+  public var eligibility: ControlEligibility { eligibilityAssessment.eligibility }
+
   public var controlObservation: WindowObservation? {
-    guard case .value(let rect) = frame else { return nil }
+    guard eligibilityAssessment.projectionAvailable, case .value(let rect) = frame else {
+      return nil
+    }
     func capability(_ read: ProbeRead<Bool>) -> ControlCapability {
       switch read {
       case .value(true): return .supported
@@ -88,11 +82,13 @@ public struct FocusedWindowEvidence: Sendable {
     minimized=\(probeDescription(minimized)); fullscreen=\(probeDescription(fullscreen)); modal=\(probeDescription(modal))
     frame=\(probeDescription(frame))
     position-settable=\(probeDescription(positionSettable)); size-settable=\(probeDescription(sizeSettable))
-    direct-child-sheets=\(probeDescription(directSheetCount)); scan-complete=\(directSheetScanComplete); nested sheets not checked
+    direct-child-sheets=\(probeDescription(directSheetCount)); scan-complete=\(directSheetScanComplete)
+    \(nestedDialogs.report)
     destruction-notification=\(probeDescription(destructionNotification))
     focused-window-unchanged-at-checks=\(probeDescription(focusedWindowUnchanged))
     expected-token-match=\(expectedWindowMatches.map(String.init) ?? "not requested")
     eligibility=\(eligibility); visibility/native-tab/nested-sheet safety remains unproven
+    \(eligibilityAssessment.report)
     start=\(startedAt); end=\(finishedAt); duration=\(finishedAt - startedAt) s
     Historical, non-atomic evidence; no enrollment, focus action, or window mutation.
     """

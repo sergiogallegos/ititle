@@ -27,11 +27,57 @@ final class FixtureApplication: NSApplication {
   }
 }
 
+/// Synthetic structural elements owned by this disposable fixture. These are
+/// public AppKit AX objects, not a claim about native application's tree shape.
+@MainActor
+final class StructuralFault {
+  var childDelay: Double = 0
+  var hideOnChildrenRead = false
+  var stallOnChildrenRead = false
+
+  func run() {
+    if hideOnChildrenRead {
+      hideOnChildrenRead = false
+      emitFixtureEvent("nested-focus-loss-begin")
+      NSApp.hide(nil)
+      Thread.sleep(forTimeInterval: 0.1)
+      emitFixtureEvent("nested-focus-loss-end")
+    }
+    if stallOnChildrenRead {
+      stallOnChildrenRead = false
+      emitFixtureEvent("nested-stall-begin")
+      Thread.sleep(forTimeInterval: 1.5)
+      emitFixtureEvent("nested-stall-end")
+    }
+    if childDelay > 0 { Thread.sleep(forTimeInterval: childDelay) }
+  }
+}
+
+@MainActor
+final class FixtureStructuralNode: NSAccessibilityElement {
+  let fault = StructuralFault()
+
+  nonisolated override func accessibilityChildren() -> [Any]? {
+    // AppKit's element protocol is nonisolated. Only fault on its main-thread
+    // callback; never access fixture UI state from an unexpected callback lane.
+    if Thread.isMainThread {
+      let fault = fault
+      MainActor.assumeIsolated { fault.run() }
+    }
+    return super.accessibilityChildren()
+  }
+}
+
 /// Stalls a window read after AXFocusedWindow has already been acquired. The
 /// worker can encounter several bounded timeouts while this fixture recovers.
 @MainActor
 final class FixtureWindow: NSWindow {
   var stallOnRoleRead = false
+  var structuralChildren: [Any]?
+
+  override func accessibilityChildren() -> [Any]? {
+    structuralChildren ?? super.accessibilityChildren()
+  }
 
   override func accessibilityRole() -> NSAccessibility.Role? {
     guard stallOnRoleRead else { return super.accessibilityRole() }
@@ -47,6 +93,8 @@ final class FixtureWindow: NSWindow {
 @MainActor
 final class FixtureDelegate: NSObject, NSApplicationDelegate {
   private var window: FixtureWindow?
+  private var structuralNodes: [FixtureStructuralNode] = []
+  private var sheet: NSWindow?
   private let state = NSTextField(labelWithString: "Ready — controlled by iTile P3 Lab")
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -68,7 +116,13 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
     // Only this process's parent owns stdin. EOF exits; no listener or network service.
     Thread.detachNewThread { [weak self] in
       while let command = readLine() {
-        guard ["stall", "quit", "arm-focus-loss", "arm-window-stall", "activate"].contains(command)
+        guard
+          [
+            "stall", "quit", "arm-focus-loss", "arm-window-stall", "activate",
+            "tree-ordinary", "tree-direct-sheet", "tree-nested-sheet", "tree-dialog",
+            "tree-system-dialog", "tree-wide", "tree-deep", "tree-cycle", "tree-budget",
+            "tree-focus-loss", "tree-stall", "native-sheet", "close-sheet",
+          ].contains(command)
         else { continue }
         DispatchQueue.main.async { [weak self] in
           if command == "quit" {
@@ -97,11 +151,89 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
             emitFixtureEvent("window-stall-armed")
             return
           }
+          if command.hasPrefix("tree-") || ["native-sheet", "close-sheet"].contains(command) {
+            guard CommandLine.arguments.contains("--nested-probe") else { return }
+            self?.configureStructure(command)
+            return
+          }
           self?.stall()
         }
       }
       DispatchQueue.main.async { NSApp.terminate(nil) }
     }
+  }
+
+  private func configureStructure(_ command: String) {
+    guard let window else { return }
+    if let sheet {
+      window.endSheet(sheet)
+      sheet.orderOut(nil)
+    }
+    sheet = nil
+    // Break deliberately cyclic child links before releasing an old scenario.
+    window.structuralChildren = nil
+    for node in structuralNodes { node.setAccessibilityChildren([]) }
+    structuralNodes.removeAll()
+    if command == "native-sheet" {
+      let sheet = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 300, height: 100),
+        styleMask: [.titled, .closable], backing: .buffered, defer: false)
+      sheet.isReleasedWhenClosed = false
+      sheet.title = "Owned native sheet"
+      let label = NSTextField(labelWithString: "Native AppKit sheet — fixture only")
+      label.frame = NSRect(x: 15, y: 25, width: 270, height: 40)
+      sheet.contentView?.addSubview(label)
+      self.sheet = sheet
+      window.beginSheet(sheet)
+    } else if command != "close-sheet" {
+      func node(_ role: NSAccessibility.Role = .group, parent: AnyObject) -> FixtureStructuralNode {
+        let node = FixtureStructuralNode()
+        node.setAccessibilityElement(true)
+        node.setAccessibilityRole(role)
+        node.setAccessibilityParent(parent)
+        node.setAccessibilityFrame(window.frame)
+        node.setAccessibilityChildren([])
+        structuralNodes.append(node)
+        return node
+      }
+      let group = node(parent: window)
+      window.structuralChildren = [group]
+      switch command {
+      case "tree-direct-sheet": window.structuralChildren = [node(.sheet, parent: window)]
+      case "tree-nested-sheet": group.setAccessibilityChildren([node(.sheet, parent: group)])
+      case "tree-dialog", "tree-system-dialog":
+        let dialog = node(.window, parent: group)
+        dialog.setAccessibilitySubrole(command == "tree-dialog" ? .dialog : .systemDialog)
+        group.setAccessibilityChildren([dialog])
+      case "tree-wide":
+        var children = [node(.sheet, parent: group)]
+        for _ in 0..<79 { children.append(node(parent: group)) }
+        group.setAccessibilityChildren(children)
+      case "tree-deep":
+        var parent = group
+        for _ in 0..<8 {
+          let child = node(parent: parent)
+          parent.setAccessibilityChildren([child])
+          parent = child
+        }
+        parent.setAccessibilityChildren([node(.sheet, parent: parent)])
+      case "tree-cycle": group.setAccessibilityChildren([group])
+      case "tree-budget":
+        var children: [FixtureStructuralNode] = []
+        for _ in 0..<20 {
+          let child = node(parent: group)
+          child.fault.childDelay = 0.08
+          children.append(child)
+        }
+        children.append(node(.sheet, parent: group))
+        group.setAccessibilityChildren(children)
+      case "tree-focus-loss": group.fault.hideOnChildrenRead = true
+      case "tree-stall": group.fault.stallOnChildrenRead = true
+      default: break
+      }
+    }
+    state.stringValue = "Nested probe scenario: \(command)"
+    emitFixtureEvent(command + "-ready")
   }
 
   private func stall() {

@@ -4,6 +4,6 @@ cd "$(dirname "$0")/.."
 xcrun swift-format lint --configuration .swift-format --strict --recursive Package.swift Sources Tests
 swift build
 swift test
-plutil -lint Resources/Info.plist Resources/P3Lab-Info.plist
-sh -n scripts/package-p3-lab
+plutil -lint Resources/Info.plist Resources/P3Lab-Info.plist Resources/AXFixture-Info.plist
+sh -n scripts/package-p3-lab scripts/package-ax-fixture
 sh -n scripts/format scripts/verify

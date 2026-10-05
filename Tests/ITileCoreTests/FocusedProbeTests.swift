@@ -14,14 +14,19 @@ final class FocusedProbeTests: XCTestCase {
     frame: ProbeRead<Rect> = .value(Rect(x: -100, y: -400, width: 800, height: 600)),
     capability: ProbeRead<Bool> = .value(true), sheets: ProbeRead<Int> = .value(0),
     complete: Bool = true, focus: ProbeRead<Bool> = .value(true),
-    expected: WindowToken? = nil
+    expected: WindowToken? = nil,
+    destruction: ProbeRead<Bool> = .value(true),
+    startedAt: Double = 10, finishedAt: Double = 10.1, sequence: UInt64 = 7,
+    nestedDialogs: NestedDialogScanSummary = .notScanned
   ) -> FocusedWindowEvidence {
     FocusedWindowEvidence(
-      token: token, environmentEpoch: 3, workerSequence: 7,
-      startedAt: 10, finishedAt: 10.1, role: role, subrole: subrole, minimized: minimized,
+      token: token, environmentEpoch: 3, workerSequence: sequence,
+      startedAt: startedAt, finishedAt: finishedAt, role: role, subrole: subrole,
+      minimized: minimized,
       fullscreen: fullscreen, modal: modal, frame: frame, positionSettable: capability,
       sizeSettable: capability, directSheetCount: sheets, directSheetScanComplete: complete,
-      destructionNotification: .value(true), focusedWindowUnchanged: focus, expectedToken: expected)
+      destructionNotification: destruction, focusedWindowUnchanged: focus, expectedToken: expected,
+      nestedDialogs: nestedDialogs)
   }
 
   func testNormalFocusedWindowStillCannotBeAdmittedForControl() throws {
@@ -111,5 +116,102 @@ final class FocusedProbeTests: XCTestCase {
       context.accepts(
         currentApp: app, environmentEpoch: 3, activationRevision: 10,
         trusted: true, paused: true))
+  }
+
+  func testSuccessfulGenericReadsRetainAllUnsupportedScopeRequirements() {
+    let assessment = evidence(expected: token).eligibilityAssessment
+    XCTAssertTrue(assessment.exclusions.isEmpty)
+    XCTAssertEqual(
+      assessment.unproven, [.currentDesktopVisibility, .nativeTabSafety, .nestedDialogSafety])
+    XCTAssertEqual(assessment.eligibility, .unknown)
+    XCTAssertTrue(assessment.report.contains("eligibility-exclusions=none"))
+    // Matching token, negative coordinates and successful attributes supply no
+    // evidence for the three unsupported scope requirements.
+    XCTAssertTrue(assessment.report.contains("currentDesktopVisibility"))
+  }
+
+  func testPositiveExclusionWinsWithoutDiscardingMissingEvidence() {
+    let assessment = evidence(
+      minimized: .value(true), modal: .unavailable(-25204), sheets: .value(2), complete: false,
+      destruction: .unavailable(-25207)
+    ).eligibilityAssessment
+    XCTAssertEqual(assessment.eligibility, .ineligible)
+    XCTAssertEqual(assessment.exclusions, [.minimized, .sheetPresent])
+    for requirement in [
+      UnprovenWindowRequirement.modalState, .destructionContinuity, .completeDirectSheetScan,
+      .currentDesktopVisibility, .nativeTabSafety, .nestedDialogSafety,
+    ] { XCTAssertTrue(assessment.unproven.contains(requirement)) }
+  }
+
+  func testUnsupportedReadsRemainUnknownRatherThanInventingWindowState() {
+    let assessment = evidence(
+      role: .invalidType, subrole: .unavailable(-25212), capability: .unavailable(-25204),
+      sheets: .value(-1), focus: .invalidType, destruction: .value(false)
+    ).eligibilityAssessment
+    XCTAssertTrue(assessment.exclusions.isEmpty)
+    XCTAssertEqual(assessment.eligibility, .unknown)
+    for requirement in [
+      UnprovenWindowRequirement.role, .subrole, .positionCapability, .sizeCapability,
+      .directSheets, .focusedContinuity, .destructionContinuity,
+    ] { XCTAssertTrue(assessment.unproven.contains(requirement)) }
+  }
+
+  func testNestedPositiveFindingsExcludeEvenWhenScanIsIncomplete() {
+    let summary = NestedDialogScanner.scan(
+      root: 0, equal: ==, stop: { nil },
+      read: { _ in
+        .success(StructuralNodeRead(role: .value("AXSheet"), subrole: .value("AXDialog")))
+      },
+      children: { node, _ in
+        if node == 0 { return .success(StructuralChildren(nodes: [1], truncated: false)) }
+        return .failure(StructuralScanFailure(.unsupported))
+      })
+    let observed = evidence(nestedDialogs: summary)
+    XCTAssertEqual(observed.eligibilityAssessment.exclusions, [.sheetPresent, .dialogPresent])
+    XCTAssertEqual(observed.controlObservation?.eligibility, .ineligible)
+    XCTAssertTrue(observed.report.contains("outcomes=unsupported"))
+  }
+
+  func testCompleteStructuralSampleDoesNotClearSafetyRequirements() {
+    let summary = NestedDialogScanner.scan(
+      root: 0, equal: ==, stop: { nil },
+      read: { _ in .failure(StructuralScanFailure(.readFailure)) },
+      children: { _, _ in .success(StructuralChildren<Int>(nodes: [], truncated: false)) })
+    XCTAssertTrue(summary.complete)
+    let observed = evidence(nestedDialogs: summary)
+    XCTAssertEqual(observed.eligibility, .unknown)
+    XCTAssertEqual(
+      observed.eligibilityAssessment.unproven,
+      [.currentDesktopVisibility, .nativeTabSafety, .nestedDialogSafety])
+  }
+
+  func testMalformedGeometryCannotReachControlProjection() {
+    let frames = [
+      Rect(x: .nan, y: 0, width: 800, height: 600),
+      Rect(x: 0, y: .infinity, width: 800, height: 600),
+      Rect(x: 0, y: 0, width: 0, height: 600),
+      Rect(x: 0, y: 0, width: 800, height: -1),
+      Rect(x: .greatestFiniteMagnitude, y: 0, width: .greatestFiniteMagnitude, height: 1),
+    ]
+    for frame in frames {
+      let sample = evidence(frame: .value(frame))
+      XCTAssertNil(sample.controlObservation)
+      XCTAssertEqual(sample.eligibility, .unknown)
+      XCTAssertTrue(sample.eligibilityAssessment.unproven.contains(.geometry))
+    }
+    XCTAssertNotNil(evidence().controlObservation)  // Valid negative origins are preserved.
+  }
+
+  func testInvalidIntervalsAndZeroSequencesCannotReachControlProjection() {
+    let samples = [
+      evidence(startedAt: .nan), evidence(finishedAt: .infinity),
+      evidence(startedAt: -1), evidence(finishedAt: 9), evidence(sequence: 0),
+    ]
+    for sample in samples {
+      XCTAssertNil(sample.controlObservation)
+      XCTAssertEqual(sample.eligibility, .unknown)
+    }
+    XCTAssertTrue(evidence(sequence: 0).eligibilityAssessment.unproven.contains(.workerSequence))
+    XCTAssertNotNil(evidence(startedAt: 0, finishedAt: 0, sequence: 1).controlObservation)
   }
 }

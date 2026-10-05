@@ -12,13 +12,25 @@ protocol ProbeBackend: AnyObject {
   func invalidateIdentity()
 }
 
+public struct FocusedProbeTraceEvent: Sendable {
+  public enum Phase: String, Sendable {
+    case workerStarted
+    case workerFinished
+  }
+
+  public let phase: Phase
+  public let uptime: Double
+}
+
 /// Only the mailbox and run-loop wakeup handles cross threads. AX objects live in run().
 public final class WindowProbe: @unchecked Sendable {
   public let token: AppToken
   private let lock = NSLock()
   private enum Request: Sendable {
     case report(UInt64, @Sendable (String) -> Void)
-    case focused(UInt64, WindowToken?, @Sendable (FocusedProbeResult) -> Void)
+    case focused(
+      UInt64, WindowToken?, (@Sendable (FocusedProbeTraceEvent) -> Void)?,
+      @Sendable (FocusedProbeResult) -> Void)
   }
   private var pending: Request?
   private var busy = false
@@ -57,13 +69,14 @@ public final class WindowProbe: @unchecked Sendable {
 
   public func inspectFocused(
     environmentEpoch: UInt64, expected: WindowToken? = nil,
+    trace: (@Sendable (FocusedProbeTraceEvent) -> Void)? = nil,
     completion: @escaping @Sendable (FocusedProbeResult) -> Void
   ) -> Bool {
     lock.lock()
     defer { lock.unlock() }
     guard !stopped, !busy else { return false }
     busy = true
-    pending = .focused(environmentEpoch, expected, completion)
+    pending = .focused(environmentEpoch, expected, trace, completion)
     wake()
     return true
   }
@@ -120,9 +133,18 @@ public final class WindowProbe: @unchecked Sendable {
           case .report(let epoch, let completion):
             let report = state.inspect(epoch: epoch, cancelled: { self.cancelled })
             return { completion(report) }
-          case .focused(let epoch, let expected, let completion):
+          case .focused(let epoch, let expected, let trace, let completion):
+            // Opt-in, metadata-only diagnostics on this dedicated thread. The
+            // receiver must not block or perform AX calls. Finish means backend
+            // return, before autorelease cleanup or main-thread delivery.
+            trace?(
+              FocusedProbeTraceEvent(
+                phase: .workerStarted, uptime: ProcessInfo.processInfo.systemUptime))
             let result = state.inspectFocused(
               epoch: epoch, expected: expected, cancelled: { self.cancelled })
+            trace?(
+              FocusedProbeTraceEvent(
+                phase: .workerFinished, uptime: ProcessInfo.processInfo.systemUptime))
             return { completion(result) }
           }
         }
@@ -492,6 +514,68 @@ struct DirectSheetSummary: Sendable {
   }
 }
 
+/// Worker-only public AX traversal. Each IPC is preceded by a stop check;
+/// timeout bounds a single in-flight call, not a hard wall-clock deadline.
+private func scanNestedDialogs(
+  _ window: AXUIElement, deadline: Double, cancelled: () -> Bool
+) -> NestedDialogScanSummary {
+  func stop() -> NestedDialogScanIssue? {
+    if cancelled() { return .cancelled }
+    if ProcessInfo.processInfo.systemUptime >= deadline { return .budget }
+    return nil
+  }
+  func failure(_ error: AXError) -> StructuralScanFailure {
+    StructuralScanFailure(
+      error == .attributeUnsupported || error == .notImplemented ? .unsupported : .readFailure)
+  }
+  func prepare(_ node: AXUIElement) -> StructuralScanFailure? {
+    if let issue = stop() { return StructuralScanFailure(issue) }
+    let error = AXUIElementSetMessagingTimeout(node, 0.2)
+    return error == .success ? nil : failure(error)
+  }
+  return NestedDialogScanner.scan(
+    root: window, equal: { CFEqual($0, $1) }, stop: stop,
+    read: { node in
+      if let failure = prepare(node) { return .failure(failure) }
+      if let issue = stop() { return .failure(StructuralScanFailure(issue)) }
+      let role = string(node, kAXRoleAttribute)
+      // Dialog subroles are relevant to windows. Ordinary controls often have
+      // no subrole; do not request their contents or optional metadata.
+      var subrole: ProbeRead<String> = .value("other-role")
+      if case .value("AXWindow") = role {
+        if let issue = stop() { return .failure(StructuralScanFailure(issue)) }
+        subrole = string(node, kAXSubroleAttribute)
+      }
+      let issues: [NestedDialogScanIssue] = [role, subrole].compactMap { attribute in
+        if case .unavailable(let code) = attribute {
+          return failure(AXError(rawValue: code) ?? .failure).issue
+        }
+        return nil
+      }
+      return .success(StructuralNodeRead(role: role, subrole: subrole, issues: issues))
+    },
+    children: { node, limit in
+      if let failure = prepare(node) { return .failure(failure) }
+      if let issue = stop() { return .failure(StructuralScanFailure(issue)) }
+      var count: CFIndex = 0
+      let countError = AXUIElementGetAttributeValueCount(
+        node, kAXChildrenAttribute as CFString, &count)
+      guard countError == .success else { return .failure(failure(countError)) }
+      guard count >= 0 else { return .failure(StructuralScanFailure(.invalidType)) }
+      if count == 0 { return .success(StructuralChildren(nodes: [], truncated: false)) }
+      if let issue = stop() { return .failure(StructuralScanFailure(issue)) }
+      var raw: CFArray?
+      let requested = min(count, limit)
+      let error = AXUIElementCopyAttributeValues(
+        node, kAXChildrenAttribute as CFString, 0, requested, &raw)
+      guard error == .success else { return .failure(failure(error)) }
+      guard let nodes = raw as? [AXUIElement], nodes.count == requested else {
+        return .failure(StructuralScanFailure(.invalidType))
+      }
+      return .success(StructuralChildren(nodes: nodes, truncated: count > requested))
+    })
+}
+
 extension ProbeState {
   fileprivate func inspectFocused(epoch: UInt64, expected: WindowToken?, cancelled: () -> Bool)
     -> FocusedProbeResult
@@ -576,6 +660,10 @@ extension ProbeState {
       sheetCount = .invalidType
       sheetComplete = false
     }
+    // Reserve most of the existing five-second request budget for revalidation.
+    let nestedDialogs = scanNestedDialogs(
+      window, deadline: min(start + 4, ProcessInfo.processInfo.systemUptime + 1),
+      cancelled: cancelled)
     // Deliver queued focus/destruction notifications before the final equality read.
     // This is bounded and still not an atomic snapshot of application state.
     var drained = false
@@ -624,7 +712,7 @@ extension ProbeState {
         frame: frame, positionSettable: positionSettable, sizeSettable: sizeSettable,
         directSheetCount: sheetCount, directSheetScanComplete: sheetComplete,
         destructionNotification: destruction, focusedWindowUnchanged: unchanged,
-        expectedToken: expected))
+        expectedToken: expected, nestedDialogs: nestedDialogs))
   }
 }
 

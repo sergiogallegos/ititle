@@ -2,7 +2,7 @@
 
 **Decision: continue with the read-only probe and M2 control-model development using simulated workers. Real window mutation remains gated.** M1 is implemented with partial manual validation; its full exit criteria are not complete. No additional unchanged-window reports are needed for the narrow cases already observed.
 
-Follow-up: [M2.1 is now implemented as a pure simulation](m2-control-model.md); [M2.2 focused inspection is also implemented in source](m2-focused-probe.md), with partial manual acceptance including focus-loss rejection, permission recovery, and desktop invalidation. Mid-read permission loss and focused physical display changes remain open. The evidence and decisions below describe the review checkpoint before that implementation.
+Follow-up: [M2.1 is now implemented as a pure simulation](m2-control-model.md); [M2.2 focused inspection is also implemented in source](m2-focused-probe.md), with partial manual acceptance including focus-loss rejection, permission recovery, and desktop invalidation. Physical display hotplug has scoped between-request evidence, and client tracing established observed permission loss during a backend request. [M2.3 now implements conservative eligibility reasons and documents the empty generic mutation scope](decisions/0003-focused-eligibility.md); eligibility proof and live integration remain separate gates. The evidence and decisions below describe the review checkpoint before that implementation.
 
 This review consolidates the timestamped [validation log](validation.md), [probe limits](m1-probe.md), [P1–P4 experiments](platform-experiments.md), and source inspection. It does not enable a feature or replace the [control contracts](control-contracts.md).
 
