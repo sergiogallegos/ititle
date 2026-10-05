@@ -16,7 +16,9 @@ Exit: correct classification on terminal, editor, browser, Finder, dialogs, and 
 
 **M2.1 implemented:** [pure control model and simulated admission](m2-control-model.md), with structured observations, independent generations, state transitions, and deterministic fake-worker race tests. No live setters or coordinator integration.
 
-Next task: **M2.2 — focused read-only observation and revalidation**. Establish structured platform evidence for explicit focused enrollment, including focus changes caused by the inspector, sheets, and lifecycle invalidation. Retain unknowns and keep mutation disabled while M1's remaining platform gates stay open.
+**M2.2 implemented; partial manual acceptance:** [focused read-only observation and revalidation](m2-focused-probe.md). Structured evidence, before/after focused-window checks, frontmost activation guards, and historical token comparison are available; eligibility remains unknown or ineligible.
+
+Scoped Chrome/Finder/TextEdit revalidation, identical-bounds rejection, sheets/tabs, pause, and synchronized in-flight focus-loss rejection are recorded. Next task: finish the focused permission/environment race checks, using an explicit request-start signal where overlap matters. Keep mutation disabled while the supported-scope and platform gates stay open.
 
 Start with explicit focused-window enrollment on one desktop/monitor; bulk discovery is gated on visibility evidence. Add per-application workers, frame diffing, conservative application, pause, and failure reporting. Keep all windows visible. Minimum-size rejection must stop retrying.
 

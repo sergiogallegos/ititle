@@ -12,11 +12,12 @@ The goal is a small tool that arranges ordinary windows predictably, responds qu
 - A pure binary split layout engine with geometry validation and unit tests.
 - A pure control-state model with structured observations and simulated per-setter admission; not connected to live window control.
 - A menu-bar read-only probe with explicit per-application inspection, permission onboarding, pause, and Quit.
+- Explicit focused-window inspection and historical-token revalidation, with scoped real-window checks and a synchronized focus-loss rejection check; permission/environment races remain open.
 - Dedicated per-application AX threads, session-local window tokens, typed unknown/error results, and redacted diagnostic reports.
 - Window roles, minimized/fullscreen state, frame capabilities, screen geometry, and uncorrelated on-screen CG bounds. It never moves windows or captures keyboard input.
 - Local app packaging and architecture, decision, testing, and contribution documentation.
 
-Automatic discovery, frame mutation, hotkeys, configuration loading, automatic tiling, and workspaces are **not implemented**. Read-only discovery runs only for an application explicitly selected from the menu. Identity continuity and current-desktop visibility are experimental, not validated guarantees. `config/proposed-v1.json` is a design example, not a working configuration.
+Automatic discovery, frame mutation, hotkeys, configuration loading, automatic tiling, and workspaces are **not implemented**. Read-only discovery runs only through explicit menu actions for a selected application or the frontmost application’s focused window. Identity continuity and current-desktop visibility are experimental, not validated guarantees. `config/proposed-v1.json` is a design example, not a working configuration.
 
 ## Build
 
@@ -26,6 +27,8 @@ Development target: macOS 14+, Swift 6.0+ with Apple command-line developer tool
 scripts/verify
 scripts/package-app
 ```
+
+Run `scripts/format` after Swift edits. The project uses the official toolchain's `swift-format` with a checked-in default configuration; `scripts/verify` enforces it. See [contributing](CONTRIBUTING.md) for the Swift style convention.
 
 Packaging produces `dist/iTile.app` with an ad-hoc signature. Open it in Finder to use the menu-bar probe; Quit iTile exits it. Opening the app needs no Accessibility permission. Choose **Enable Accessibility for inspection…**, grant permission in System Settings, then choose **Inspect application**. The report stays in memory unless you explicitly use **Copy diagnostic report**. **Pause inspections** rejects new requests and discards late results. Rebuilding an ad-hoc signed app may invalidate future permission grants; distribution signing is a later milestone.
 
@@ -53,6 +56,7 @@ docs/                   Product, architecture, decisions, and research
 - [Second-pass review](docs/review-2026-10-02.md)
 - [Control contracts](docs/control-contracts.md)
 - [M2.1 control model and simulation limits](docs/m2-control-model.md)
+- [M2.2 focused inspection and manual acceptance](docs/m2-focused-probe.md)
 - [Read-only probe usage and manual checks](docs/m1-probe.md)
 - [M1 readiness and M2.1 acceptance criteria](docs/m1-readiness.md)
 - [P3 delay/timeout lab](docs/p3-lab.md)

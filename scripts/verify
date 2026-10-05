@@ -1,7 +1,9 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
+xcrun swift-format lint --configuration .swift-format --strict --recursive Package.swift Sources Tests
 swift build
 swift test
 plutil -lint Resources/Info.plist Resources/P3Lab-Info.plist
 sh -n scripts/package-p3-lab
+sh -n scripts/format scripts/verify

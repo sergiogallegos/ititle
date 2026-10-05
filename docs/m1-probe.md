@@ -2,6 +2,8 @@
 
 Implemented on 2026-10-04. P1/P2 have partial user-reported observations and documented exclusions; P3 has a scoped real-AX fixture result. P4 has partial user-reported connection, negative-origin move, disconnection, and sleep/wake evidence; simultaneous mixed-scale coverage remains open. No window-manager reliability or current-desktop eligibility is claimed.
 
+The source also includes [M2.2 focused-window inspection and revalidation](m2-focused-probe.md); its real-window acceptance is separate from the M1 observations below.
+
 ## Use
 
 1. Run `scripts/verify`, then `scripts/package-app`, and open `dist/iTile.app`.

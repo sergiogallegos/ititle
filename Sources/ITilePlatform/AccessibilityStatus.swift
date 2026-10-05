@@ -2,13 +2,13 @@
 @preconcurrency import ApplicationServices
 
 public enum AccessibilityStatus {
-    /// Read-only check. Does not prompt, enumerate windows, or change their frames.
-    public static var isTrusted: Bool { AXIsProcessTrusted() }
+  /// Read-only check. Does not prompt, enumerate windows, or change their frames.
+  public static var isTrusted: Bool { AXIsProcessTrusted() }
 
-    /// Called only after the user explicitly chooses permission onboarding.
-    @MainActor
-    public static func requestAccess() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
-    }
+  /// Called only after the user explicitly chooses permission onboarding.
+  @MainActor
+  public static func requestAccess() {
+    let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+    _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+  }
 }

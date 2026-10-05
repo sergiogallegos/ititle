@@ -2,6 +2,7 @@
 
 Read README.md and docs/architecture.md before changing behavior.
 - Use Swift and Apple frameworks only. No external packages, vendored libraries, private APIs, or code injection.
+- Follow the Swift API Design Guidelines and the checked-in official swift-format configuration. Run scripts/format after Swift edits; scripts/verify enforces formatting.
 - Keep layout/state logic independent of AppKit and Accessibility objects.
 - Keep blocking Accessibility calls off the main thread and Swift cooperative executor.
 - Distinguish implemented behavior from proposed designs in documentation.

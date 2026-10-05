@@ -1,14 +1,14 @@
 # Testing and measurement
 
-Run `scripts/verify` for the current build (including P3 tools), core/platform tests, and bundle metadata lint. The separate [P3 lab](p3-lab.md) is packaged with `scripts/package-p3-lab`; real measurements require running that app with its own explicit Accessibility permission. Run `scripts/package-app` to validate release compilation and ad-hoc app packaging. The app must be opened separately to validate its menu; compilation alone is not UI verification.
+Run `scripts/format` after Swift edits. Run `scripts/verify` for strict official swift-format lint, the current build (including P3 tools), core/platform tests, bundle metadata lint, and script syntax checks. The separate [P3 lab](p3-lab.md) is packaged with `scripts/package-p3-lab`; real measurements require running that app with its own explicit Accessibility permission. Run `scripts/package-app` to validate release compilation and ad-hoc app packaging. The app must be opened separately to validate its menu; compilation alone is not UI verification.
 
 ## Current automated coverage
 
-The latest recorded verification passed 49 tests (40 core, 9 platform), including 26 control-model scenarios for admission, invalidation, bounded pending work, and late fake-worker results. Existing coverage includes nested geometry and gap conservation; invalid geometry and duplicate rejection; token retention/retirement and process generations; coordinate round trips; latency summaries; incomplete sheet evidence; dedicated worker ownership, isolation, bounded admission, stop and reuse; and fixture pipe short-message delivery/EOF. See [validation](validation.md) for the run history. No AX mutation, desktop integration, or performance claim is covered by these tests.
+The latest recorded verification passed 57 tests (46 core, 11 platform), including 26 control-model scenarios for admission, invalidation, bounded pending work, and late fake-worker results, plus eight focused-evidence/delivery/worker tests. Existing coverage includes nested geometry and gap conservation; invalid geometry and duplicate rejection; token retention/retirement and process generations; coordinate round trips; latency summaries; incomplete sheet evidence; dedicated worker ownership, isolation, bounded admission, stop and reuse; and fixture pipe short-message delivery/EOF. See [validation](validation.md) for the run history. No AX mutation, desktop integration, or performance claim is covered by these tests.
 
 ## Planned fake-platform tests
 
-[M2.1 control model and simulated admission](m2-control-model.md) now covers deterministic event interleavings. Actor integration, synchronized worker admission, and real setters remain separate work; focused read-only platform revalidation is next.
+[M2.1 control model and simulated admission](m2-control-model.md) now covers deterministic event interleavings. Actor integration, synchronized worker admission, and real setters remain separate work; focused read-only platform revalidation is implemented in source with [partial manual acceptance and remaining race checks](m2-focused-probe.md).
 
 Record redacted events and replay them through the coordinator: create/destroy storms, stale generations, delayed writes, permission loss, PID reuse, observer failure, and app timeout. Check that destroyed windows receive no new writes, stale results cannot replace current state, pending work is bounded, and one failing app cannot stop another.
 
