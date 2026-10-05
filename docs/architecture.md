@@ -6,7 +6,7 @@ Implemented today: `LayoutNode`, `Rect`, `LayoutEngine`, pure probe identity reg
 
 The second-pass contracts are authoritative where the initial outline was incomplete: [ADR 0002](decisions/0002-control-boundary.md), [control contracts](control-contracts.md), and [platform experiments](platform-experiments.md). Real writes are gated on those experiments.
 
-The [2026-10-04 readiness review](m1-readiness.md) consolidates experimental coverage and specified M2.1: pure control state and simulated admission before real setter integration. That simulation task and the focused read-only observation/revalidation source are now implemented. A synchronized owned-fixture check observed in-flight focus-loss rejection; permission/environment races remain manual acceptance work. It does not mark M1's remaining platform gates complete.
+The [2026-10-04 readiness review](m1-readiness.md) consolidates experimental coverage and specified M2.1: pure control state and simulated admission before real setter integration. That simulation task and the focused read-only observation/revalidation source are now implemented. Owned-fixture checks cover focus-loss rejection, observed permission loss/recovery, and desktop invalidation, including a Space notification during a delayed AX accessor. Effective permission loss during a read and focused physical display-change coverage remain open. These scoped observations do not mark M1's remaining platform gates complete.
 
 ## Modules
 

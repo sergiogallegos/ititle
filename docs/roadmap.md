@@ -18,7 +18,7 @@ Exit: correct classification on terminal, editor, browser, Finder, dialogs, and 
 
 **M2.2 implemented; partial manual acceptance:** [focused read-only observation and revalidation](m2-focused-probe.md). Structured evidence, before/after focused-window checks, frontmost activation guards, and historical token comparison are available; eligibility remains unknown or ineligible.
 
-Scoped Chrome/Finder/TextEdit revalidation, identical-bounds rejection, sheets/tabs, pause, and synchronized in-flight focus-loss rejection are recorded. Next task: finish the focused permission/environment race checks, using an explicit request-start signal where overlap matters. Keep mutation disabled while the supported-scope and platform gates stay open.
+Scoped Chrome/Finder/TextEdit revalidation, identical-bounds rejection, sheets/tabs, pause, synchronized focus-loss rejection, observed permission loss/recovery, and desktop invalidation are recorded. A public Space notification was correlated inside an owned fixture's delayed AX accessor; exact client completion timing remains untraced. Next task: test effective permission loss during a read and focused physical display changes, distinguishing the settings switch from the app's observed trust state. Keep mutation disabled while the supported-scope and platform gates stay open.
 
 Start with explicit focused-window enrollment on one desktop/monitor; bulk discovery is gated on visibility evidence. Add per-application workers, frame diffing, conservative application, pause, and failure reporting. Keep all windows visible. Minimum-size rejection must stop retrying.
 

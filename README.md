@@ -12,7 +12,7 @@ The goal is a small tool that arranges ordinary windows predictably, responds qu
 - A pure binary split layout engine with geometry validation and unit tests.
 - A pure control-state model with structured observations and simulated per-setter admission; not connected to live window control.
 - A menu-bar read-only probe with explicit per-application inspection, permission onboarding, pause, and Quit.
-- Explicit focused-window inspection and historical-token revalidation, with scoped real-window checks and a synchronized focus-loss rejection check; permission/environment races remain open.
+- Explicit focused-window inspection and historical-token revalidation, with scoped focus-loss, permission recovery, and desktop invalidation checks; mid-read permission loss and physical display-change coverage remain open.
 - Dedicated per-application AX threads, session-local window tokens, typed unknown/error results, and redacted diagnostic reports.
 - Window roles, minimized/fullscreen state, frame capabilities, screen geometry, and uncorrelated on-screen CG bounds. It never moves windows or captures keyboard input.
 - Local app packaging and architecture, decision, testing, and contribution documentation.

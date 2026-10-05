@@ -427,3 +427,36 @@ Decision: accept this scoped real in-flight focus-loss rejection and recovery ob
 At the user's request, adopted the official Swift toolchain's `swift-format` and Swift API Design Guidelines. Captured the installed formatter defaults in `.swift-format` (two-space indentation, 100-column target), added `scripts/format`, documented the convention in AGENTS/CONTRIBUTING/README, and made `scripts/verify` run strict formatting lint. Swift's formatter documentation explicitly does not prescribe one universal whitespace style; these captured defaults are the project's reproducible choice. No package or third-party formatter was installed.
 
 Formatted all Swift package/source/test files. Strict lint additionally required converting one existing inline block comment to a line comment. Final `scripts/verify` passed formatting, all debug targets, all 57 tests (46 core, 11 platform), both plist checks, and script syntax. No app bundle was replaced. This source-formatting verification is separate from the packaged-executable manual evidence above.
+
+## Commit/push and focused lifecycle checks — 2026-10-05 02:46–03:04 UTC (Oct 4 local)
+
+At the user's request, fetched origin/main, confirmed no divergence, and committed the focused probe, manual evidence, and Swift formatting convention as `d490f62` (`Add focused read-only validation and enforce Swift formatting`). Push to origin/main succeeded. The working tree was clean immediately afterward. The fixture extension and evidence below are subsequent local work, separate from that push.
+
+All checks used the unchanged installed iTile executable with SHA-256 `9a882ea231da7fa48a0f6c4c2fe447fb20fa2d824dc516f38567b6b23e1ca9c1`, macOS 27.0.1 (26A434), arm64, and one reported display `(0,30,2048,1187)`, scale 1. The owned fixture used a temporary regular-app wrapper and its parent-owned input pipe. Its known window frame was `(200,922,420,158)`, standard/non-minimized/non-fullscreen/non-modal, position-settable=true and size-settable=false; successful reports remained ineligible.
+
+### Desktop round trip between requests
+
+The initial 02:48 attempt switched right but could not read iTile's AX report window from the other desktop (AX automation invalid index). The original desktop was restored and the fixture exited. This was a test-setup limitation, not an accepted rejection check.
+
+The corrected 02:49 run read the report only after switching right and returning left. Baseline at 02:49:10 was `app-8/window-1`, epoch 23, sequence 1. After the round trip, the report was `Desktop/display or sleep state changed. Previous observations are stale; inspect again.` Revalidation required a fresh inspection. Recovery at 02:49:20 was `app-8/window-2`, epoch 25, sequence 2, with unchanged geometry and ineligible evidence. Fixture exit status was 0. This is between-request environment invalidation, not a mid-read claim.
+
+### Observed Accessibility loss and recovery
+
+Two setup attempts at 02:51 stopped before changing permission because the settings page's loaded hierarchy differed from its transient hierarchy. The 02:53 attempt established `app-9/window-1`, epoch 28, then observed the iTile settings switch off, but an immediate inspection still produced an AX result: an unrelated focused sheet (`app-10/window-1`), not the fixture. The switch was restored and the fixture exited. No blocked-inspection or stale-token pass is claimed for that attempt, and no cause for the intervening sheet is asserted. Subsequent inspection of the settled off state did confirm iTile's menu reported missing permission. The successful retry explicitly waited for the app's effective trust status rather than treating the checkbox value as sufficient evidence.
+
+- 02:57:54 baseline after confirmed granted status: `app-11/window-1`, epoch 30, sequence 1; worker interval `81423.25436695834`–`81423.27046479167`.
+- Disabled only iTile's switch and confirmed **Accessibility: required for inspection** in its menu. Focused inspection then returned `Accessibility permission required. Use Enable Accessibility for inspection…`.
+- Restored the switch and confirmed **Accessibility: granted**. The same running fixture's Revalidate action returned `No matching historical focused token for this app. Choose Inspect focused window first.`
+- 02:58:16 fresh recovery: `app-11/window-2`, epoch 33, sequence 2; worker interval `81445.029765875`–`81445.03727895833`. Fixture exit status was 0.
+
+The successful round trip did not restart iTile, replace its executable, or remove/re-add its permission entry. The final settings value and iTile's own menu both confirmed access restored. This verifies permission loss observed between requests and subsequent recovery. Effective mid-scan revocation, brief unobserved revoke/regrant cycles, and propagation timing guarantees remain unproven.
+
+### Desktop notification during a delayed fixture accessor
+
+Added the explicit `arm-window-stall` fixture command, accepted only in `--focused-probe` mode. It pauses the fixture's next public window-role accessor for 1.5 seconds and emits begin/end uptime events; the arm is consumed before sleeping. This affects only the disposable fixture and does not alter the production worker or its per-handle timeout. A separate temporary Swift/AppKit monitor emitted public Space-change notifications on the same host uptime clock. No AX access or private Space API was used by that monitor.
+
+At 03:02:16, baseline was `app-12/window-1`, epoch 34, sequence 1. The arm acknowledgment was `81687.93338666667`. The fixture window accessor ran from `81688.44429366667` to `81689.94524966668`. After its begin event, the controller switched one desktop right; the monitor observed a Space notification at `81689.62803329166`, inside that accessor interval. After returning left, iTile reported the environment-stale message. Revalidate rejected the historical reference. At 03:02:29, a fresh read recovered as `app-12/window-2`, epoch 36, sequence 3; worker interval `81697.67868733333`–`81697.68164204167`.
+
+Accepted scope: a real Space transition overlapped execution of an owned AX accessor, and the resulting historical reference remained invalid until a fresh inspection. Limits: the fixture cannot identify the AX caller; no other client deliberately read it while armed. Per-call timeouts can finish before the accessor returns. Production request-completion time was not traced, and simultaneous focus invalidation was not isolated from environment invalidation. Do not turn this into a hard client-IPC overlap or all-races guarantee. Physical display changes were not tested in this focused sequence.
+
+Both disposable processes exited; a final process check found neither remaining. The original desktop was restored. Final `scripts/verify` after the fixture change passed strict formatting, all 57 tests (46 core, 11 platform), debug builds, both plists, and script syntax. No production source correction was justified by these observations. Next: effective mid-read permission-loss evidence and focused physical display changes; supported-scope exclusions continue to gate real mutation.

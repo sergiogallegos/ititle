@@ -27,15 +27,31 @@ final class FixtureApplication: NSApplication {
   }
 }
 
+/// Stalls a window read after AXFocusedWindow has already been acquired. The
+/// worker can encounter several bounded timeouts while this fixture recovers.
+@MainActor
+final class FixtureWindow: NSWindow {
+  var stallOnRoleRead = false
+
+  override func accessibilityRole() -> NSAccessibility.Role? {
+    guard stallOnRoleRead else { return super.accessibilityRole() }
+    stallOnRoleRead = false
+    emitFixtureEvent("window-read-begin")
+    Thread.sleep(forTimeInterval: 1.5)
+    emitFixtureEvent("window-read-end")
+    return super.accessibilityRole()
+  }
+}
+
 /// Deliberately stalls only this disposable process. Never sends AX calls to other apps.
 @MainActor
 final class FixtureDelegate: NSObject, NSApplicationDelegate {
-  private var window: NSWindow?
+  private var window: FixtureWindow?
   private let state = NSTextField(labelWithString: "Ready — controlled by iTile P3 Lab")
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     let label = CommandLine.arguments.contains("--slow") ? "Delayed" : "Control"
-    let window = NSWindow(
+    let window = FixtureWindow(
       contentRect: NSRect(x: 200, y: 200, width: 420, height: 130),
       styleMask: [.titled, .closable], backing: .buffered, defer: false)
     window.title = "iTile P3 \(label) Fixture"
@@ -52,7 +68,8 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
     // Only this process's parent owns stdin. EOF exits; no listener or network service.
     Thread.detachNewThread { [weak self] in
       while let command = readLine() {
-        guard ["stall", "quit", "arm-focus-loss", "activate"].contains(command) else { continue }
+        guard ["stall", "quit", "arm-focus-loss", "arm-window-stall", "activate"].contains(command)
+        else { continue }
         DispatchQueue.main.async { [weak self] in
           if command == "quit" {
             NSApp.terminate(nil)
@@ -72,6 +89,12 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
             else { return }
             app.hideOnFocusedRead = true
             emitFixtureEvent("focus-loss-armed")
+            return
+          }
+          if command == "arm-window-stall" {
+            guard CommandLine.arguments.contains("--focused-probe") else { return }
+            self?.window?.stallOnRoleRead = true
+            emitFixtureEvent("window-stall-armed")
             return
           }
           self?.stall()

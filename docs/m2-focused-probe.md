@@ -2,7 +2,7 @@
 
 Implemented in source on 2026-10-04. Automated verification passes; real-window acceptance is **partial**, with scoped Chrome, Finder, TextEdit, sheet/tab, and pause observations recorded in [validation](validation.md). This is a diagnostic path, not enrollment or live tiling. The M2.1 reducer is still disconnected from the app's platform observations and never receives eligible evidence from this path.
 
-The updated app has been packaged, signature-verified, launched, and granted Accessibility by the user. Ordinary-window revalidation, conservative rejection cases, and synchronized in-flight focus-loss rejection have been observed. Permission/desktop-transition races remain open. Earlier unsynchronized fixture attempts were inconclusive and are retained in the validation history.
+The updated app has been packaged, signature-verified, launched, and granted Accessibility by the user. Ordinary-window revalidation, conservative rejection cases, synchronized focus-loss rejection, observed permission loss/recovery, and desktop invalidation have been observed. A public Space notification was correlated inside a delayed fixture accessor, with the client-timing limits described below. Effective permission loss during a read and focused physical display changes remain open. Earlier inconclusive attempts are retained in the validation history.
 
 ## Use after packaging
 
@@ -34,7 +34,7 @@ Public APIs were checked against the installed SDK's `AXAttributeConstants.h` an
 
 Six new pure tests cover unknown evidence and the control-model gate, positive exclusions including sheets, incomplete/missing attributes, token mismatch despite equal geometry, inspector/away-and-back activation, and process/epoch/permission/pause delivery checks. Two new production-worker tests verify focused/full requests share the bounded mailbox, stopped focused reads do not deliver, typed results and expected tokens survive dispatch, and backend operations remain on the same dedicated thread. Existing sheet and worker tests continue to pass.
 
-`scripts/verify` passed all 57 tests (46 core, 11 platform), debug builds, plist lint, and script syntax. These are fake-backend and value-model tests; they do not establish real focus-notification support, UI behavior, or AX eligibility.
+`scripts/verify` passed strict Swift formatting, all 57 tests (46 core, 11 platform), debug builds, plist lint, and script syntax. These are fake-backend and value-model tests; they do not establish real focus-notification support, UI behavior, or AX eligibility.
 
 ## Remaining manual focused-probe acceptance
 
@@ -58,5 +58,15 @@ For the manual check, retain the child stdin pipe, activate via its own command,
 The 2026-10-05 02:39 UTC check followed that sequence using a temporary regular-app wrapper for the fixture. iTile discarded the pending result, Ghostty remained foreground, revalidation required a fresh inspection, and recovery succeeded. This is one scoped real integration observation, not a timing guarantee or proof of every activation race. The prior unsynchronized attempts are not counted as passes.
 
 Default P3 behavior is unchanged; `--slow` still enables its separate stdin-triggered 1.5-second pause. No user application is stalled, no private API is used, and the installed iTile executable did not need to be replaced for this fixture test.
+
+### Permission and desktop invalidation checks
+
+The permission round trip first established a fixture observation, disabled only iTile's Accessibility switch, and waited for iTile's own menu to report **Accessibility: required for inspection**. The settings switch alone was insufficient: an earlier attempt still obtained an AX result before the effective trust change was observed. Once the app reported missing permission, focused inspection was blocked. After restoring the switch and waiting for **Accessibility: granted**, Revalidate rejected the prior reference and a fresh inspection recovered with a new token. The installed app remained running throughout the successful sequence. Permission is restored. This covers loss observed between requests; it does not prove mid-read revocation or instantaneous notification of every settings change.
+
+A native desktop round trip cleared the reference and advanced the environment epoch. The report's AX window was unavailable on the other desktop, so checks read it after returning without activating it on the remote desktop. Revalidation required a fresh read, which issued a new window token.
+
+For a delayed-read variant, `arm-window-stall` in `--focused-probe` mode arms a one-shot 1.5-second pause in the fixture window's public `accessibilityRole()` accessor. It emits `window-stall-armed`, then `window-read-begin`/`window-read-end` around the pause. It does not change focus or the desktop itself. This delays a window read after focused-window acquisition; iTile's individual AX calls still have 0.2-second timeouts. A separate temporary Swift/AppKit process observed only public `NSWorkspace.activeSpaceDidChangeNotification` events and emitted host-uptime timestamps. The controller waited for the fixture's begin event, switched right one desktop, and returned after recovery.
+
+The observed Space event fell inside the fixture accessor interval. After returning, iTile retained the environment-stale message, rejected the historical reference, and recovered with a new token. This establishes a real desktop transition during server-side accessor execution and conservative recovery. It does **not** establish that the original client IPC was still waiting, trace the production worker's completion instant, or isolate the environment guard from simultaneous activation invalidation. No other client deliberately read the armed fixture; as with the focus-loss fixture, caller identity is not authenticated by these event messages. Both disposable processes were stopped after the check.
 
 No extra unchanged-window samples are needed for the completed scoped M1/M2.2 checks. Focused-platform acceptance remains a gate before any live control integration; nested-dialog, tab, and visibility exclusions still need enforceable supported-scope decisions.
