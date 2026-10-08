@@ -8,9 +8,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private let permissionItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
   private let applicationsMenu = NSMenu()
   private var workers: [Int32: (app: NSRunningApplication, probe: WindowProbe)] = [:]
+  private let replies = ProbeReplyTransport()
+  private var retiringWorkers: [WindowProbe] = []
   private var generation: UInt64 = 0
   private var epoch: UInt64 = 0
-  private var environmentEpoch: UInt64 = 0
+  private var preview = ReadOnlyPreview()
+  private var environmentEpoch: UInt64 { preview.environmentEpoch }
   private var paused = false
   private var reportWindow: NSWindow?
   private var reportView: NSTextView?
@@ -20,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private var focusedCandidate: WindowToken?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    preview.setTrust(AccessibilityStatus.isTrusted, at: ProcessInfo.processInfo.systemUptime)
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     item.button?.title = "iTile"
     let menu = NSMenu()
@@ -43,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     add("Inspect focused window (read-only)", action: #selector(inspectFocused), to: menu)
     add(
       "Revalidate last focused window (read-only)", action: #selector(revalidateFocused), to: menu)
+    add("Preview focused tiling (read-only)", action: #selector(previewFocused), to: menu)
     add("Pause inspections", action: #selector(togglePause(_:)), to: menu)
     add("Copy diagnostic report", action: #selector(copyReport), to: menu)
     menu.addItem(.separator())
@@ -89,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard
           [
             "inspect", "fixture", "fixture-control", "native-editor", "revalidate", "pause",
-            "resume", "status",
+            "resume", "status", "preview",
             "report", "quit",
           ]
           .contains(command)
@@ -98,6 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
           guard let self else { return }
           switch command {
           case "inspect": self.inspectFocused()
+          case "preview": self.previewFocused()
           case "fixture":
             self.inspectManualSample(identifier: "local.itile.axfixture", label: "owned fixture")
           case "fixture-control":
@@ -150,9 +156,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     focusedCandidate = nil
     let request = epoch
     let environment = environmentEpoch
-    let accepted = probe.inspectFocused(environmentEpoch: environment) { [weak self] result in
-      Task { @MainActor in
+    let delivery = replies
+    let accepted = probe.inspectFocusedAcknowledged(environmentEpoch: environment) {
+      [weak self] result, registry, receipt in
+      let routed = delivery.submit(receipt) { [weak self] in
         guard let self else { return }
+        if let registry {
+          self.preview.synchronize(registry, at: ProcessInfo.processInfo.systemUptime)
+        }
         let current =
           self.epoch == request && !self.paused && !app.isTerminated
           && self.environmentEpoch == environment && AccessibilityStatus.isTrusted
@@ -164,6 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
           "Manual backend sample: \(label); foreground delivery coordinator not exercised.\n"
             + result.report)
       }
+      if !routed { probe.stop() }
     }
     if !accepted { showReport("Manual backend worker busy; no extra request queued.") }
   }
@@ -176,6 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
   func menuWillOpen(_ menu: NSMenu) {
     let trusted = AccessibilityStatus.isTrusted
+    preview.setTrust(trusted, at: ProcessInfo.processInfo.systemUptime)
     FocusedTrace.emit("menuTrust", request: epoch, environment: environmentEpoch, trusted: trusted)
     permissionItem.title =
       trusted
@@ -219,6 +232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
   @objc private func togglePause(_ sender: NSMenuItem) {
     paused.toggle()
+    preview.setPaused(paused, at: ProcessInfo.processInfo.systemUptime)
     sender.title = paused ? "Resume inspections" : "Pause inspections"
     invalidateReport(
       paused
@@ -234,6 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
   @objc private func frontmostChanged() {
     activationRevision += 1
+    preview.revoke(at: ProcessInfo.processInfo.systemUptime)
     if focusedRequest != nil {
       FocusedTrace.emit("focusInvalidated", request: epoch, environment: environmentEpoch)
       epoch += 1
@@ -245,12 +260,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   }
 
   private func invalidateReport(_ reason: String) {
+    for worker in workers.values { worker.probe.invalidateRead() }
     FocusedTrace.emit("invalidated", request: epoch, environment: environmentEpoch)
     focusedRequest = nil
     focusedCandidate = nil
     statusItem?.button?.toolTip = nil
     epoch += 1
-    environmentEpoch += 1
+    preview.invalidate(at: ProcessInfo.processInfo.systemUptime)
     reportView?.string = reason
   }
 
@@ -258,7 +274,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     guard
       let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
     else { return }
-    workers.removeValue(forKey: app.processIdentifier)?.probe.stop()
+    if let worker = workers.removeValue(forKey: app.processIdentifier) {
+      preview.terminate(worker.probe.token, at: ProcessInfo.processInfo.systemUptime)
+      retire(worker.probe)
+    }
     invalidateReport("An application exited. Inspect again for a fresh snapshot.")
   }
 
@@ -276,14 +295,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     epoch += 1
     let requestEpoch = epoch
     let displays = displayReport()
-    let accepted = probe.inspect(environmentEpoch: environmentEpoch) { [weak self] report in
-      Task { @MainActor in
-        guard let self, self.epoch == requestEpoch, !self.paused,
+    let delivery = replies
+    let accepted = probe.inspectAcknowledged(environmentEpoch: environmentEpoch) {
+      [weak self] report, registry, receipt in
+      let routed = delivery.submit(receipt) { [weak self] in
+        guard let self else { return }
+        if let registry {
+          self.preview.synchronize(registry, at: ProcessInfo.processInfo.systemUptime)
+        }
+        guard self.epoch == requestEpoch, !self.paused,
           !app.isTerminated, AccessibilityStatus.isTrusted,
           self.workers[pid]?.probe.token == probe.token
         else { return }
         self.showReport(displays + "\n\n" + report)
       }
+      if !routed { probe.stop() }
     }
     showReport(
       accepted
@@ -292,23 +318,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     )
   }
 
+  private func retire(_ probe: WindowProbe) {
+    probe.stop()
+    replies.retire(probe.token)
+    if !probe.isRetired { retiringWorkers.append(probe) }
+  }
+
   private func worker(for app: NSRunningApplication) -> WindowProbe? {
+    retiringWorkers.removeAll { $0.isRetired }
     let pid = app.processIdentifier
     if let existing = workers[pid],
       existing.app.isTerminated || existing.app.launchDate != app.launchDate
     {
-      existing.probe.stop()
+      preview.terminate(existing.probe.token, at: ProcessInfo.processInfo.systemUptime)
+      retire(existing.probe)
       workers.removeValue(forKey: pid)
     }
     if workers[pid] == nil {
-      guard workers.count < 16 else {
+      guard workers.count + retiringWorkers.count < 16, generation < UInt64.max else {
         showReport(
           "Worker limit (16) reached. Quit and reopen iTile to inspect a different set of applications."
         )
         return nil
       }
       generation += 1
-      workers[pid] = (app, WindowProbe(token: AppToken(pid: pid, generation: generation)))
+      let token = AppToken(pid: pid, generation: generation)
+      guard replies.attach(token) else {
+        showReport("Reply transport unavailable. Quit and reopen iTile.")
+        return nil
+      }
+      workers[pid] = (app, WindowProbe(token: token))
+      preview.attach(token, at: ProcessInfo.processInfo.systemUptime)
+    }
+    guard !replies.hasFailed(workers[pid]!.probe.token) else {
+      showReport("Reply transport protocol failure. Inspection stopped for this application.")
+      return nil
     }
     return workers[pid]!.probe
   }
@@ -316,7 +360,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   @objc private func inspectFocused() { beginFocusedInspection(revalidate: false) }
   @objc private func revalidateFocused() { beginFocusedInspection(revalidate: true) }
 
-  private func beginFocusedInspection(revalidate: Bool) {
+  @objc private func previewFocused() { beginFocusedInspection(revalidate: false, isPreview: true) }
+
+  private func beginFocusedInspection(revalidate: Bool, isPreview: Bool = false) {
+    preview.setTrust(AccessibilityStatus.isTrusted, at: ProcessInfo.processInfo.systemUptime)
     guard !paused else { return }
     guard AccessibilityStatus.isTrusted else {
       invalidateReport("Accessibility permission required.")
@@ -344,6 +391,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let context = FocusRequestContext(
       app: probe.token, environmentEpoch: environmentEpoch,
       activationRevision: activationRevision)
+    preview.revoke(at: ProcessInfo.processInfo.systemUptime)
+    let areas = usableDisplayAreas()
     let displays = displayReport().replacingOccurrences(of: "iTile M1", with: "iTile M2.2")
     focusedRequest = request
     let appGeneration = probe.token.generation
@@ -358,12 +407,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     } else {
       trace = nil
     }
-    let accepted = probe.inspectFocused(
+    let delivery = replies
+    let accepted = probe.inspectFocusedAcknowledged(
       environmentEpoch: environmentEpoch, expected: expected, trace: trace
     ) {
-      [weak self] result in
-      Task { @MainActor in
+      [weak self] result, registry, receipt in
+      let routed = delivery.submit(receipt) { [weak self] in
         guard let self else { return }
+        let registryAccepted =
+          registry.map {
+            self.preview.synchronize($0, at: ProcessInfo.processInfo.systemUptime)
+          } ?? false
         FocusedTrace.emit(
           "completion", request: request, app: appGeneration,
           environment: self.environmentEpoch,
@@ -373,6 +427,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
           return
         }
         self.focusedRequest = nil
+        self.preview.setTrust(
+          AccessibilityStatus.isTrusted, at: ProcessInfo.processInfo.systemUptime)
         let front = NSWorkspace.shared.frontmostApplication
         let sameProcess =
           !app.isTerminated && front?.processIdentifier == app.processIdentifier
@@ -391,7 +447,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
           return
         }
         self.focusedCandidate = nil
-        if case .observation(let evidence) = result,
+        if registryAccepted, case .observation(let evidence) = result,
+          registry?.windows.contains(evidence.token) == true,
           case .value(true) = evidence.focusedWindowUnchanged,
           case .value(true) = evidence.destructionNotification,
           evidence.expectedWindowMatches != false
@@ -400,11 +457,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         self.statusItem?.button?.toolTip = nil
         FocusedTrace.emit("presented", request: request, app: appGeneration)
+        var previewReport = ""
+        if isPreview {
+          if registryAccepted, case .observation(let evidence) = result,
+            case .value(let frame) = evidence.frame,
+            let target = ReadOnlyPreview.target(for: frame, areas: areas)
+          {
+            previewReport =
+              "\n\n"
+              + self.preview.preview(
+                evidence, target: target, context: context,
+                currentApp: sameProcess ? probe.token : nil,
+                activationRevision: self.activationRevision,
+                at: ProcessInfo.processInfo.systemUptime
+              ).report
+          } else {
+            previewReport =
+              "\n\nRead-only tiling preview unavailable: no accepted registry, valid observation, or usable display target. No window was enrolled or moved."
+          }
+        }
         self.showReport(
-          displays + "\n\n" + result.report
+          displays + "\n\n" + result.report + previewReport
             + "\nFrontmost app checked before presentation. Opening this report can change focus; revalidation requires returning to the source window."
         )
       }
+      if !routed { probe.stop() }
     }
     if accepted {
       FocusedTrace.emit(
@@ -415,6 +492,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       FocusedTrace.emit("busy", request: request, app: appGeneration)
       focusedRequest = nil
       showReport("This application's worker is busy. No focused request was queued.")
+    }
+  }
+
+  private func usableDisplayAreas() -> [Rect] {
+    let primaryTop = NSScreen.screens.first?.frame.maxY ?? 0
+    return NSScreen.screens.map { screen in
+      let area = screen.visibleFrame
+      return DesktopCoordinates.flip(
+        Rect(x: area.minX, y: area.minY, width: area.width, height: area.height),
+        primaryTop: primaryTop)
     }
   }
 
@@ -476,7 +563,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   }
 
   func applicationWillTerminate(_ notification: Notification) {
+    preview.stop(at: ProcessInfo.processInfo.systemUptime)
     for worker in workers.values { worker.probe.stop() }
+    for worker in retiringWorkers { worker.stop() }
+    replies.stop()
     NSWorkspace.shared.notificationCenter.removeObserver(self)
     NotificationCenter.default.removeObserver(self)
   }

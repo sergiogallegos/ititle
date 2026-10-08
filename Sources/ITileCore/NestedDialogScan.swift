@@ -7,18 +7,30 @@ public enum NestedDialogScanIssue: String, Equatable, Sendable {
 public struct NestedDialogScanSummary: Equatable, Sendable {
   public let observedSheets: Int
   public let observedDialogs: Int
+  public let observedTabGroups: Int
   public let examinedNodes: Int
   public let issues: [NestedDialogScanIssue]
 
   public static let notScanned = NestedDialogScanSummary(
     observedSheets: 0, observedDialogs: 0, examinedNodes: 0, issues: [.notScanned])
 
+  public init(
+    observedSheets: Int, observedDialogs: Int, examinedNodes: Int,
+    issues: [NestedDialogScanIssue], observedTabGroups: Int = 0
+  ) {
+    self.observedSheets = observedSheets
+    self.observedDialogs = observedDialogs
+    self.examinedNodes = examinedNodes
+    self.issues = issues
+    self.observedTabGroups = observedTabGroups
+  }
+
   public var complete: Bool { issues.isEmpty }
 
   public var report: String {
     let outcomes = issues.isEmpty ? "complete" : issues.map(\.rawValue).joined(separator: ",")
     return
-      "nested-structure: sheets=\(observedSheets); dialogs=\(observedDialogs); nodes=\(examinedNodes); outcomes=\(outcomes)"
+      "nested-structure: sheets=\(observedSheets); dialogs=\(observedDialogs); tab-groups=\(observedTabGroups); nodes=\(examinedNodes); outcomes=\(outcomes)"
   }
 }
 
@@ -48,8 +60,9 @@ public struct StructuralChildren<Node> {
 
 /// Synchronous bounded traversal. The platform supplies worker-owned handles;
 /// core owns no AX objects, clocks, or threads. Root is the selected window,
-/// depth zero; counts include descendants only. Repeated identities are treated
-/// conservatively as cycles, including shared links in a graph.
+/// depth zero; sheet, dialog, and tab-group counts include descendants only.
+/// Repeated identities are treated conservatively as cycles, including shared
+/// links in a graph.
 public enum NestedDialogScanner {
   public static func scan<Node>(
     root: Node, maxNodes: Int = 64, maxDepth: Int = 6,
@@ -61,6 +74,7 @@ public enum NestedDialogScanner {
     var issues: [NestedDialogScanIssue] = []
     var sheets = 0
     var dialogs = 0
+    var tabGroups = 0
     var examined = 0
     func record(_ issue: NestedDialogScanIssue) {
       if !issues.contains(issue) { issues.append(issue) }
@@ -83,6 +97,7 @@ public enum NestedDialogScanner {
         switch read(node) {
         case .failure(let failure): record(failure.issue)
         case .success(let value):
+          if case .value("AXTabGroup") = value.role { tabGroups += 1 }
           if case .value("AXSheet") = value.role { sheets += 1 }
           let dialogNames = ["AXDialog", "AXSystemDialog"]
           if case .value(let role) = value.role, dialogNames.contains(role) {
@@ -131,7 +146,8 @@ public enum NestedDialogScanner {
       }
     }
     return NestedDialogScanSummary(
-      observedSheets: sheets, observedDialogs: dialogs, examinedNodes: examined, issues: issues)
+      observedSheets: sheets, observedDialogs: dialogs, examinedNodes: examined, issues: issues,
+      observedTabGroups: tabGroups)
   }
 }
 

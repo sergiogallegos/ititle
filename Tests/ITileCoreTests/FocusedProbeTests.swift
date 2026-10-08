@@ -17,7 +17,8 @@ final class FocusedProbeTests: XCTestCase {
     expected: WindowToken? = nil,
     destruction: ProbeRead<Bool> = .value(true),
     startedAt: Double = 10, finishedAt: Double = 10.1, sequence: UInt64 = 7,
-    nestedDialogs: NestedDialogScanSummary = .notScanned
+    nestedDialogs: NestedDialogScanSummary = .notScanned,
+    onScreenBounds: OnScreenBoundsEvidence = .notSampled
   ) -> FocusedWindowEvidence {
     FocusedWindowEvidence(
       token: token, environmentEpoch: 3, workerSequence: sequence,
@@ -26,7 +27,7 @@ final class FocusedProbeTests: XCTestCase {
       fullscreen: fullscreen, modal: modal, frame: frame, positionSettable: capability,
       sizeSettable: capability, directSheetCount: sheets, directSheetScanComplete: complete,
       destructionNotification: destruction, focusedWindowUnchanged: focus, expectedToken: expected,
-      nestedDialogs: nestedDialogs)
+      nestedDialogs: nestedDialogs, onScreenBounds: onScreenBounds)
   }
 
   func testNormalFocusedWindowStillCannotBeAdmittedForControl() throws {
@@ -172,6 +173,27 @@ final class FocusedProbeTests: XCTestCase {
     XCTAssertTrue(observed.report.contains("outcomes=unsupported"))
   }
 
+  func testTabGroupExclusionSurvivesIncompleteScansAndBlocksControl() throws {
+    for issues in [[NestedDialogScanIssue](), [.unsupported], [.cycle], [.budget], [.cancelled]] {
+      let summary = NestedDialogScanSummary(
+        observedSheets: 0, observedDialogs: 0, examinedNodes: 2, issues: issues,
+        observedTabGroups: 1)
+      let observed = evidence(nestedDialogs: summary)
+      XCTAssertEqual(observed.eligibilityAssessment.exclusions, [.tabGroupPresent])
+      XCTAssertTrue(observed.eligibilityAssessment.unproven.contains(.nativeTabSafety))
+      let control = try XCTUnwrap(observed.controlObservation)
+      XCTAssertEqual(control.eligibility, .ineligible)
+      var model = ControlModel()
+      _ = model.reduce(.permission(true), at: 0)
+      _ = model.reduce(.attach(app), at: 0)
+      for _ in 0..<3 { _ = model.reduce(.environmentChanged(.environmentChanged), at: 0) }
+      _ = model.reduce(.observation(control), at: 10.1)
+      XCTAssertTrue(
+        model.reduce(.tile([token: control.frame]), at: 10.1).contains(.rejected(.invalidPlan)))
+      XCTAssertEqual(model.state, .paused)
+    }
+  }
+
   func testCompleteStructuralSampleDoesNotClearSafetyRequirements() {
     let summary = NestedDialogScanner.scan(
       root: 0, equal: ==, stop: { nil },
@@ -183,6 +205,32 @@ final class FocusedProbeTests: XCTestCase {
     XCTAssertEqual(
       observed.eligibilityAssessment.unproven,
       [.currentDesktopVisibility, .nativeTabSafety, .nestedDialogSafety])
+  }
+
+  func testOnScreenBoundsCannotClearVisibilityOrAdmitControl() throws {
+    let frame = Rect(x: -100, y: -400, width: 800, height: 600)
+    let window = OnScreenWindowMetadata(layer: 0, frame: frame)
+    for sample in [
+      OnScreenBoundsEvidence.notSampled,
+      OnScreenBoundsEvidence(issue: .metadataUnavailable),
+      OnScreenBoundsEvidence(frame: frame, windows: []),
+      OnScreenBoundsEvidence(frame: frame, windows: [window]),
+      OnScreenBoundsEvidence(frame: frame, windows: [window, window]),
+      OnScreenBoundsEvidence(frame: frame, windows: [window], issues: [.entryLimit]),
+    ] {
+      let observed = evidence(onScreenBounds: sample)
+      XCTAssertEqual(observed.eligibility, .unknown)
+      XCTAssertTrue(observed.eligibilityAssessment.exclusions.isEmpty)
+      XCTAssertTrue(observed.eligibilityAssessment.unproven.contains(.currentDesktopVisibility))
+      let control = try XCTUnwrap(observed.controlObservation)
+      var model = ControlModel()
+      _ = model.reduce(.permission(true), at: 0)
+      _ = model.reduce(.attach(app), at: 0)
+      for _ in 0..<3 { _ = model.reduce(.environmentChanged(.environmentChanged), at: 0) }
+      _ = model.reduce(.observation(control), at: 10.1)
+      XCTAssertTrue(
+        model.reduce(.tile([token: control.frame]), at: 10.1).contains(.rejected(.invalidPlan)))
+    }
   }
 
   func testMalformedGeometryCannotReachControlProjection() {

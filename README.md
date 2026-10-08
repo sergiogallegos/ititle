@@ -11,9 +11,14 @@ The goal is a small tool that arranges ordinary windows predictably, responds qu
 - A dependency-free Swift package with separate core, platform, and app targets.
 - A pure binary split layout engine with geometry validation and unit tests.
 - A pure control-state model with structured observations and simulated per-setter admission; not connected to live window control.
+- An explicit read-only focused tiling preview that projects real observations into the control model and explains blocked plans.
+- Acknowledged read-only replies through a shared bounded owner drain; workers remain occupied until consumption.
+- Bounded tracked-window registry synchronization on explicit replies, with stale/retired-token rejection and record retirement.
 - A menu-bar read-only probe with explicit per-application inspection, permission onboarding, pause, and Quit.
 - Explicit focused-window inspection and historical-token revalidation, with scoped focus-loss, mid-request permission-loss, desktop invalidation, and physical display hotplug checks. Eligibility remains unknown or ineligible.
 - A pure focused eligibility assessment with explicit exclusion/missing-evidence reasons and validation before projecting control records. No eligible production scope is enabled.
+- Focused on-screen bounds candidate diagnostics with explicit ambiguity/incomplete outcomes; they do not prove current-desktop visibility.
+- Content-free structural tab-group evidence with conservative positive exclusion; native-tab absence and lifecycle safety remain unproven.
 - Bounded read-only nested sheet/dialog detection during focused inspection, with explicit incomplete outcomes; scoped fixture/native-sheet, menu, sheet-transition, and focus/permission rejection checks are recorded; generic coverage remains unproven.
 - Dedicated per-application AX threads, session-local window tokens, typed unknown/error results, and redacted diagnostic reports.
 - Window roles, minimized/fullscreen state, frame capabilities, screen geometry, and uncorrelated on-screen CG bounds. It never moves windows or captures keyboard input.
@@ -32,7 +37,7 @@ scripts/package-app
 
 Run `scripts/format` after Swift edits. The project uses the official toolchain's `swift-format` with a checked-in default configuration; `scripts/verify` enforces it. See [contributing](CONTRIBUTING.md) for the Swift style convention.
 
-Packaging produces `dist/iTile.app` with an ad-hoc signature. Open it in Finder to use the menu-bar probe; Quit iTile exits it. Opening the app needs no Accessibility permission. Choose **Enable Accessibility for inspection…**, grant permission in System Settings, then choose **Inspect application**. The report stays in memory unless you explicitly use **Copy diagnostic report**. **Pause inspections** rejects new requests and discards late results. Rebuilding an ad-hoc signed app may invalidate future permission grants; distribution signing is a later milestone.
+Packaging produces `dist/iTile.app` with an ad-hoc signature. Open it in Finder to use the menu-bar probe; Quit iTile exits it. Opening the app needs no Accessibility permission. Choose **Enable Accessibility for inspection…**, grant permission in System Settings, then choose **Inspect application**. The report stays in memory unless you explicitly use **Copy diagnostic report**. Choose **Preview focused tiling (read-only)** to inspect a proposed single-window frame and the reasons control is blocked. It performs a fresh read and moves no source window. **Pause inspections** rejects new requests and discards late results. Rebuilding an ad-hoc signed app may invalidate future permission grants; distribution signing is a later milestone.
 
 No package manager or network downloads are needed once Apple's developer tools are installed. Zero dependencies means zero third-party build/runtime packages; the Swift toolchain, Apple frameworks, and system shell utilities remain prerequisites.
 
@@ -60,7 +65,14 @@ docs/                   Product, architecture, decisions, and research
 - [M2.1 control model and simulation limits](docs/m2-control-model.md)
 - [M2.2 focused inspection and manual acceptance](docs/m2-focused-probe.md)
 - [M2.4 bounded nested-dialog evidence](docs/m2-nested-dialogs.md)
+- [M2.5 tab evidence and conservative exclusion](docs/m2-native-tabs.md)
+- [M2.6 focused on-screen bounds evidence](docs/m2-desktop-visibility.md)
 - [M2.3 focused eligibility decision](docs/decisions/0003-focused-eligibility.md)
+- [M2.7 supported scope decision](docs/decisions/0004-supported-scope.md)
+- [M2.8 read-only tiling preview](docs/m2-read-only-preview.md)
+- [M2.9 bounded registry/lifecycle protocol](docs/m2-registry-lifecycle.md)
+- [M2.10 reply-delivery and admission contract](docs/m2-delivery-admission.md)
+- [M2.11 acknowledged read-only reply transport](docs/m2-read-only-delivery.md)
 - [Read-only probe usage and manual checks](docs/m1-probe.md)
 - [M1 readiness and M2.1 acceptance criteria](docs/m1-readiness.md)
 - [P3 delay/timeout lab](docs/p3-lab.md)

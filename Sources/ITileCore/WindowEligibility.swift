@@ -2,6 +2,7 @@
 public enum WindowExclusion: String, Equatable, Sendable {
   case nonWindowRole, nonStandardWindow, minimized, fullscreen, modal
   case positionNotSettable, sizeNotSettable, focusChanged, tokenChanged, sheetPresent, dialogPresent
+  case tabGroupPresent
 }
 
 /// Missing evidence blocks enrollment. These codes never contain application content.
@@ -78,6 +79,8 @@ public struct WindowEligibilityAssessment: Equatable, Sendable {
       exclusions.append(.sheetPresent)
     }
     if evidence.nestedDialogs.observedDialogs > 0 { exclusions.append(.dialogPresent) }
+
+    if evidence.nestedDialogs.observedTabGroups > 0 { exclusions.append(.tabGroupPresent) }
 
     let geometryValid: Bool
     if case .value(let rect) = evidence.frame {

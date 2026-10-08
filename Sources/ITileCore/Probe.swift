@@ -33,6 +33,13 @@ public struct ProbeRegistry: Sendable {
     }
   }
 
+  /// Complete tracked identities, not proof of all OS windows or visibility.
+  public func snapshot(environmentEpoch: UInt64, revision: UInt64) -> ProbeRegistrySnapshot {
+    ProbeRegistrySnapshot(
+      app: app, environmentEpoch: environmentEpoch, revision: revision,
+      highestSerial: nextSerial, windows: Set(tokens.values))
+  }
+
   public mutating func invalidate() { tokens.removeAll() }
 
   /// Unobservable elements expire without retiring unrelated observable windows.
@@ -53,5 +60,26 @@ public enum DesktopCoordinates {
     Rect(
       x: rect.x, y: primaryTop - rect.y - rect.height,
       width: rect.width, height: rect.height)
+  }
+}
+
+/// Replacement state carried with an explicit worker reply. A serial watermark
+/// retires absent identities without an unbounded tombstone/event queue.
+public struct ProbeRegistrySnapshot: Equatable, Sendable {
+  public let app: AppToken
+  public let environmentEpoch: UInt64
+  public let revision: UInt64
+  public let highestSerial: UInt64
+  public let windows: Set<WindowToken>
+
+  public init(
+    app: AppToken, environmentEpoch: UInt64, revision: UInt64,
+    highestSerial: UInt64, windows: Set<WindowToken>
+  ) {
+    self.app = app
+    self.environmentEpoch = environmentEpoch
+    self.revision = revision
+    self.highestSerial = highestSerial
+    self.windows = windows
   }
 }

@@ -26,7 +26,8 @@ The intended initial mutation scope remains explicitly selected ordinary windows
 | Geometry | No state exclusion inferred from malformed input | Missing, non-finite, non-positive dimensions, or overflowing edges |
 | Observation interval and worker sequence | No state exclusion inferred from malformed input | Non-finite/backward/negative interval or zero sequence |
 | Nested sheets/dialogs | Positive descendant findings exclude, even in incomplete scans | Structural scans never establish lifecycle safety |
-| Desktop visibility, native tabs | Future positive unsupported-state evidence must exclude | Always unproven in the current generic probe |
+| Structural tab groups | Any observed group, even in incomplete scans, yields `tabGroupPresent`; native vs content tabs are not distinguished | Native-tab absence and lifecycle safety always remain unproven |
+| Desktop visibility | No generic identity-correlated visibility provider; M2.6 zero/single/multiple bounds candidates establish no state exclusion | Always unproven, including complete single-candidate samples |
 
 Valid negative geometry origins are allowed. A zero-duration interval is valid. Malformed geometry, intervals, or sequences cannot be projected into a `WindowObservation`; otherwise projection preserves the unknown/ineligible assessment. Fixed report reason codes contain no application content.
 
@@ -39,3 +40,11 @@ A future eligible scope must have an enforceable evidence provider tied to the w
 M2.3 implements explainable blocking decisions and rejects malformed control records. It does not close the three remaining proof requirements or connect the control reducer to the app. Mutation stays disabled.
 
 Follow-up source implemented in [M2.4](../m2-nested-dialogs.md): bounded read-only nested-dialog evidence on the existing dedicated worker, with a pure scan summary. The original acceptance requirements remain: Record positive sheets/dialogs and explicit incomplete, unsupported, cycle, depth/node-limit, and budget outcomes without reading contents. Tests must show positive findings exclude even in incomplete scans and incomplete scans never prove absence. A complete structural scan only describes the examined tree at that sample; it must not automatically clear tab/visibility requirements or claim lifecycle safety. Manual owned-fixture checks remain separate from unit verification.
+
+Follow-up source implemented in [M2.5](../m2-native-tabs.md): content-free structural tab-group counts and positive exclusions share the bounded traversal. Zero groups never clear native-tab safety; scoped owned native-AppKit acceptance is recorded separately from source verification, with scoped Finder/TextEdit reader coverage now recorded; native frontend/menu delivery and general absence proof remain unvalidated.
+
+[M2.6](../m2-desktop-visibility.md) adds content-free focused CG bounds candidate evidence, retaining the empty supported mutation scope. Counts alone cannot establish an AX identity mapping or clear visibility requirements.
+
+The October 6 local owned cross-desktop test observed a complete single bounds candidate while public own-window status placed the original AX window off the active Space and an equal-frame peer on it. This scoped counterexample rejects uniqueness of same-PID geometry as a production visibility provider. The supported mutation scope remains empty; further eligibility work must propose an identity-correlated provider rather than relax this gate. See [validation](../validation.md) for the reader context and remaining limits.
+
+The follow-up [supported-scope decision](0004-supported-scope.md) assesses the reviewed providers, retains the empty production mutation scope, and specifies a read-only control-model integration task. It introduces no eligible override.

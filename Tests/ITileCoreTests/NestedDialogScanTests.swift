@@ -36,6 +36,40 @@ final class NestedDialogScanTests: XCTestCase {
     XCTAssertTrue(summary.complete)
   }
 
+  func testTabGroupsAreCountedWithoutTreatingRadioButtonsAsTabs() {
+    let summary = scan(
+      edges: [0: [1], 1: [2, 3, 4]],
+      roles: [1: "AXTabGroup", 2: "AXRadioButton", 3: "AXTabGroup", 4: "AXSheet"])
+    XCTAssertEqual(summary.observedTabGroups, 2)
+    XCTAssertEqual(summary.observedSheets, 1)
+    XCTAssertEqual(summary.observedDialogs, 0)
+    XCTAssertTrue(summary.complete)
+    XCTAssertTrue(summary.report.contains("tab-groups=2"))
+  }
+
+  func testIncompleteTabGroupSamplesRetainPositiveEvidence() {
+    let cycle = scan(edges: [0: [1], 1: [1]], roles: [1: "AXTabGroup"])
+    XCTAssertEqual(cycle.observedTabGroups, 1)
+    XCTAssertEqual(cycle.issues, [.cycle])
+    let unsupported = scan(
+      edges: [0: [1]], roles: [1: "AXTabGroup"], failures: [1: .unsupported])
+    XCTAssertEqual(unsupported.observedTabGroups, 1)
+    XCTAssertFalse(unsupported.complete)
+    let limited = scan(
+      edges: [0: [1], 1: [2]], roles: [2: "AXTabGroup"], maxDepth: 1)
+    XCTAssertEqual(limited.observedTabGroups, 0)
+    XCTAssertEqual(limited.issues, [.depthLimit])
+    var checks = 0
+    let budget = scan(
+      edges: [0: [1]], roles: [1: "AXTabGroup"],
+      stop: {
+        checks += 1
+        return checks >= 4 ? .budget : nil
+      })
+    XCTAssertEqual(budget.observedTabGroups, 1)
+    XCTAssertEqual(budget.issues, [.budget])
+  }
+
   func testCycleAndSharedLinksNeverProveAbsence() {
     for edges in [[0: [1], 1: [0]], [0: [1, 2], 1: [2]]] {
       let summary = scan(edges: edges)

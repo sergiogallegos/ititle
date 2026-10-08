@@ -10,6 +10,11 @@ protocol ProbeBackend: AnyObject {
     -> FocusedProbeResult
   func tearDown()
   func invalidateIdentity()
+  func registrySnapshot(epoch: UInt64) -> ProbeRegistrySnapshot?
+}
+
+extension ProbeBackend {
+  func registrySnapshot(epoch: UInt64) -> ProbeRegistrySnapshot? { nil }
 }
 
 public struct FocusedProbeTraceEvent: Sendable {
@@ -27,14 +32,14 @@ public final class WindowProbe: @unchecked Sendable {
   public let token: AppToken
   private let lock = NSLock()
   private enum Request: Sendable {
-    case report(UInt64, @Sendable (String) -> Void)
+    case report(UInt64, @Sendable (String, ProbeRegistrySnapshot?, ProbeReceipt) -> Void)
     case focused(
       UInt64, WindowToken?, (@Sendable (FocusedProbeTraceEvent) -> Void)?,
-      @Sendable (FocusedProbeResult) -> Void)
+      @Sendable (FocusedProbeResult, ProbeRegistrySnapshot?, ProbeReceipt) -> Void)
   }
-  private var pending: Request?
-  private var busy = false
-  private var stopped = false
+  private var pending: (ReadOperationID, Request)?
+  private var receiptState: ReadOnlyReceiptState
+  private var retired = false
   private var loop: CFRunLoop?
   private var source: CFRunLoopSource?
 
@@ -50,6 +55,7 @@ public final class WindowProbe: @unchecked Sendable {
 
   init(token: AppToken, makeBackend: @escaping @Sendable () -> any ProbeBackend) {
     self.token = token
+    receiptState = ReadOnlyReceiptState(app: token)
     self.makeBackend = makeBackend
     Thread.detachNewThread { [self] in run() }
   }
@@ -58,13 +64,24 @@ public final class WindowProbe: @unchecked Sendable {
   public func inspect(environmentEpoch: UInt64, completion: @escaping @Sendable (String) -> Void)
     -> Bool
   {
-    lock.lock()
-    defer { lock.unlock() }
-    guard !stopped, !busy else { return false }
-    busy = true
-    pending = .report(environmentEpoch, completion)
-    wake()
-    return true
+    inspectWithRegistry(environmentEpoch: environmentEpoch) { report, _ in completion(report) }
+  }
+
+  public func inspectWithRegistry(
+    environmentEpoch: UInt64,
+    completion: @escaping @Sendable (String, ProbeRegistrySnapshot?) -> Void
+  ) -> Bool {
+    inspectAcknowledged(environmentEpoch: environmentEpoch) { result, registry, receipt in
+      completion(result, registry)
+      receipt.acknowledge()
+    }
+  }
+
+  public func inspectAcknowledged(
+    environmentEpoch: UInt64,
+    completion: @escaping @Sendable (String, ProbeRegistrySnapshot?, ProbeReceipt) -> Void
+  ) -> Bool {
+    enqueue(.report(environmentEpoch, completion))
   }
 
   public func inspectFocused(
@@ -72,32 +89,103 @@ public final class WindowProbe: @unchecked Sendable {
     trace: (@Sendable (FocusedProbeTraceEvent) -> Void)? = nil,
     completion: @escaping @Sendable (FocusedProbeResult) -> Void
   ) -> Bool {
+    inspectFocusedWithRegistry(
+      environmentEpoch: environmentEpoch, expected: expected, trace: trace
+    ) { result, _ in completion(result) }
+  }
+
+  /// Result and registry replacement share one bounded delivery, including failures.
+  public func inspectFocusedWithRegistry(
+    environmentEpoch: UInt64, expected: WindowToken? = nil,
+    trace: (@Sendable (FocusedProbeTraceEvent) -> Void)? = nil,
+    completion: @escaping @Sendable (FocusedProbeResult, ProbeRegistrySnapshot?) -> Void
+  ) -> Bool {
+    inspectFocusedAcknowledged(
+      environmentEpoch: environmentEpoch, expected: expected, trace: trace
+    ) { result, registry, receipt in
+      completion(result, registry)
+      receipt.acknowledge()
+    }
+  }
+
+  public func inspectFocusedAcknowledged(
+    environmentEpoch: UInt64, expected: WindowToken? = nil,
+    trace: (@Sendable (FocusedProbeTraceEvent) -> Void)? = nil,
+    completion:
+      @escaping @Sendable (FocusedProbeResult, ProbeRegistrySnapshot?, ProbeReceipt) -> Void
+  ) -> Bool {
+    enqueue(.focused(environmentEpoch, expected, trace, completion))
+  }
+
+  private func enqueue(_ request: Request) -> Bool {
     lock.lock()
-    defer { lock.unlock() }
-    guard !stopped, !busy else { return false }
-    busy = true
-    pending = .focused(environmentEpoch, expected, trace, completion)
-    wake()
+    guard let id = receiptState.admit() else {
+      let terminal = receiptState.phase == .stopped
+      let handles = (source, loop)
+      lock.unlock()
+      if terminal { wake(handles) }
+      return false
+    }
+    pending = (id, request)
+    let handles = (source, loop)
+    lock.unlock()
+    wake(handles)
     return true
   }
 
   public func stop() {
     lock.lock()
-    defer { lock.unlock() }
-    stopped = true
+    receiptState.stop()
     pending = nil
-    wake()
+    let handles = (source, loop)
+    lock.unlock()
+    wake(handles)
   }
 
-  private func wake() {
-    if let source { CFRunLoopSourceSignal(source) }
-    if let loop { CFRunLoopWakeUp(loop) }
+  /// Invalidates the occupied read without freeing its execution/reply slot.
+  public func invalidateRead() {
+    lock.lock()
+    receiptState.invalidate()
+    lock.unlock()
+  }
+
+  public var isRetired: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return retired
+  }
+
+  private func wake(_ handles: (CFRunLoopSource?, CFRunLoop?)) {
+    if let source = handles.0 { CFRunLoopSourceSignal(source) }
+    if let loop = handles.1 { CFRunLoopWakeUp(loop) }
   }
 
   private var cancelled: Bool {
     lock.lock()
     defer { lock.unlock() }
-    return stopped
+    return receiptState.phase == .stopped
+  }
+
+  private func invalidated(_ id: ReadOperationID) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return receiptState.isCancelled(id)
+  }
+
+  private func receipt(for id: ReadOperationID) -> ProbeReceipt? {
+    lock.lock()
+    let value = receiptState.publish(id)
+    lock.unlock()
+    return value.map {
+      ProbeReceipt(
+        id: $0,
+        consume: { [weak self] receipt in
+          guard let self else { return false }
+          self.lock.lock()
+          defer { self.lock.unlock() }
+          return self.receiptState.acknowledge(receipt)
+        })
+    }
   }
 
   private func run() {
@@ -115,8 +203,9 @@ public final class WindowProbe: @unchecked Sendable {
       lock.lock()
       let work = pending
       pending = nil
+      let admitted = work.map { receiptState.begin($0.0) } ?? false
       lock.unlock()
-      if let work {
+      if let (id, work) = work, admitted {
         // Process destruction notifications before correlating the next explicit snapshot.
         // A continuous notification stream must not starve inspection or stop.
         var drained = false
@@ -128,11 +217,18 @@ public final class WindowProbe: @unchecked Sendable {
         }
         if cancelled { break }
         if !drained { state.invalidateIdentity() }
-        let deliver: () -> Void = autoreleasepool {
+        let deliver: (ProbeReceipt) -> Void = autoreleasepool {
           switch work {
           case .report(let epoch, let completion):
-            let report = state.inspect(epoch: epoch, cancelled: { self.cancelled })
-            return { completion(report) }
+            let report =
+              invalidated(id)
+              ? "Inspection cancelled. No windows inspected."
+              : state.inspect(epoch: epoch, cancelled: { self.invalidated(id) })
+            let registry = invalidated(id) ? nil : state.registrySnapshot(epoch: epoch)
+            let valid = validRegistry(registry, epoch: epoch)
+            let bounded = Self.boundedReport(
+              valid ? report : "Invalid registry replacement; inspection excluded.")
+            return { completion(bounded, valid ? registry : nil, $0) }
           case .focused(let epoch, let expected, let trace, let completion):
             // Opt-in, metadata-only diagnostics on this dedicated thread. The
             // receiver must not block or perform AX calls. Finish means backend
@@ -140,19 +236,22 @@ public final class WindowProbe: @unchecked Sendable {
             trace?(
               FocusedProbeTraceEvent(
                 phase: .workerStarted, uptime: ProcessInfo.processInfo.systemUptime))
-            let result = state.inspectFocused(
-              epoch: epoch, expected: expected, cancelled: { self.cancelled })
+            let result: FocusedProbeResult =
+              invalidated(id)
+              ? .failure(.cancelled)
+              : state.inspectFocused(
+                epoch: epoch, expected: expected, cancelled: { self.invalidated(id) })
             trace?(
               FocusedProbeTraceEvent(
                 phase: .workerFinished, uptime: ProcessInfo.processInfo.systemUptime))
-            return { completion(result) }
+            let registry = invalidated(id) ? nil : state.registrySnapshot(epoch: epoch)
+            let valid = validRegistry(registry, epoch: epoch)
+            return {
+              completion(valid ? result : .failure(.identityChanged), valid ? registry : nil, $0)
+            }
           }
         }
-        lock.lock()
-        let shouldDeliver = !stopped
-        busy = false
-        lock.unlock()
-        if shouldDeliver { deliver() }
+        if let receipt = receipt(for: id) { deliver(receipt) }
       } else {
         CFRunLoopRunInMode(.defaultMode, 3600, true)
       }
@@ -162,7 +261,26 @@ public final class WindowProbe: @unchecked Sendable {
     lock.lock()
     loop = nil
     source = nil
+    retired = true
     lock.unlock()
+  }
+
+  private func validRegistry(_ value: ProbeRegistrySnapshot?, epoch: UInt64) -> Bool {
+    guard let value else { return true }  // Diagnostic adapters may omit registry evidence.
+    return value.app == token && value.environmentEpoch == epoch && value.revision > 0
+      && value.windows.count <= 64
+      && value.windows.allSatisfy {
+        $0.app == token && $0.serial > 0 && $0.serial <= value.highestSerial
+      }
+  }
+
+  private static func boundedReport(_ report: String) -> String {
+    let limit = 65_536
+    guard report.utf8.count > limit else { return report }
+    let marker = "\nDiagnostic text truncated."
+    // Leave room for a replacement scalar at a split UTF-8 boundary.
+    return String(decoding: report.utf8.prefix(limit - marker.utf8.count - 4), as: UTF8.self)
+      + marker
   }
 }
 
@@ -170,6 +288,7 @@ public final class WindowProbe: @unchecked Sendable {
 private final class ProbeState: ProbeBackend {
   let token: AppToken
   var registry: ProbeRegistry
+  var registryRevision: UInt64 = 0
   var elements: [(id: Int, element: AXUIElement)] = []
   var nextIdentity = 0
   var observer: AXObserver?
@@ -222,6 +341,24 @@ private final class ProbeState: ProbeBackend {
   }
 
   func invalidateIdentity() { destructionObserved = true }
+
+  func registrySnapshot(epoch: UInt64) -> ProbeRegistrySnapshot? {
+    // Drain only a bounded notification batch after IPC. Overflow/destruction
+    // conservatively expires all identities, never an unbounded event backlog.
+    var drained = false
+    for _ in 0..<64 {
+      if CFRunLoopRunInMode(.defaultMode, 0, true) != .handledSource {
+        drained = true
+        break
+      }
+    }
+    if !drained || destructionObserved || observer == nil { clearIdentity() }
+    registry.invalidate(expiringIdentities)
+    expiringIdentities.removeAll()
+    destructionObserved = false
+    registryRevision += 1
+    return registry.snapshot(environmentEpoch: epoch, revision: registryRevision)
+  }
 
   func clearIdentity() {
     if let observer {
@@ -402,7 +539,7 @@ private func string(_ window: AXUIElement, _ key: String) -> ProbeRead<String> {
     guard let text = value as? String else { return nil }
     let allowed = [
       "AXWindow", "AXStandardWindow", "AXDialog", "AXSystemDialog", "AXSheet", "AXFloatingWindow",
-      "AXUnknown",
+      "AXUnknown", "AXTabGroup",
     ]
     return allowed.contains(text) ? text : "other-role"
   }
@@ -576,6 +713,67 @@ private func scanNestedDialogs(
     })
 }
 
+/// Worker-only, explicit metadata sample. CG provides no AX identity bridge.
+/// The system snapshot allocation is not bounded by our retained-entry limit.
+private func sampleOnScreenBounds(
+  frame: ProbeRead<Rect>, pid: Int32, deadline: Double, cancelled: () -> Bool
+) -> OnScreenBoundsEvidence {
+  func stop() -> OnScreenBoundsIssue? {
+    if cancelled() { return .cancelled }
+    if ProcessInfo.processInfo.systemUptime >= deadline { return .budget }
+    return nil
+  }
+  if let issue = stop() { return OnScreenBoundsEvidence(issue: issue) }
+  let rectangle: Rect
+  switch frame {
+  case .value(let value): rectangle = value
+  case .invalidType: return OnScreenBoundsEvidence(issue: .invalidGeometry)
+  case .unavailable: return OnScreenBoundsEvidence(issue: .frameUnavailable)
+  }
+  guard
+    let info = CGWindowListCopyWindowInfo(
+      [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+  else { return OnScreenBoundsEvidence(issue: .metadataUnavailable) }
+  if let issue = stop() { return OnScreenBoundsEvidence(issue: issue) }
+  var entries: [OnScreenWindowMetadata] = []
+  var issues: [OnScreenBoundsIssue] = []
+  for item in info {
+    if let issue = stop() {
+      issues.append(issue)
+      break
+    }
+    guard let owner = item[kCGWindowOwnerPID as String] as? NSNumber,
+      CFGetTypeID(owner) != CFBooleanGetTypeID(), let ownerPID = Int32(exactly: owner.doubleValue)
+    else {
+      if !issues.contains(.invalidMetadata) { issues.append(.invalidMetadata) }
+      continue
+    }
+    guard ownerPID == pid else { continue }
+    guard entries.count < 128 else {
+      issues.append(.entryLimit)
+      break
+    }
+    let layer: Int?
+    if let number = item[kCGWindowLayer as String] as? NSNumber,
+      CFGetTypeID(number) != CFBooleanGetTypeID()
+    {
+      layer = Int(exactly: number.doubleValue)
+    } else {
+      layer = nil
+    }
+    var frame: Rect?
+    if let bounds = item[kCGWindowBounds as String] as? NSDictionary,
+      let rectangle = CGRect(dictionaryRepresentation: bounds)
+    {
+      frame = Rect(
+        x: rectangle.origin.x, y: rectangle.origin.y,
+        width: rectangle.size.width, height: rectangle.size.height)
+    }
+    entries.append(OnScreenWindowMetadata(layer: layer, frame: frame))
+  }
+  return OnScreenBoundsEvidence(frame: rectangle, windows: entries, issues: issues)
+}
+
 extension ProbeState {
   fileprivate func inspectFocused(epoch: UInt64, expected: WindowToken?, cancelled: () -> Bool)
     -> FocusedProbeResult
@@ -664,6 +862,8 @@ extension ProbeState {
     let nestedDialogs = scanNestedDialogs(
       window, deadline: min(start + 4, ProcessInfo.processInfo.systemUptime + 1),
       cancelled: cancelled)
+    let onScreenBounds = sampleOnScreenBounds(
+      frame: frame, pid: token.pid, deadline: start + 4.5, cancelled: cancelled)
     // Deliver queued focus/destruction notifications before the final equality read.
     // This is bounded and still not an atomic snapshot of application state.
     var drained = false
@@ -702,6 +902,10 @@ extension ProbeState {
       clearIdentity()
       return .failure(.cancelled)
     }
+    guard ProcessInfo.processInfo.systemUptime - start < 5 else {
+      clearIdentity()
+      return .failure(.cancelled)
+    }
     focusSequence += 1
     return .observation(
       FocusedWindowEvidence(
@@ -712,7 +916,7 @@ extension ProbeState {
         frame: frame, positionSettable: positionSettable, sizeSettable: sizeSettable,
         directSheetCount: sheetCount, directSheetScanComplete: sheetComplete,
         destructionNotification: destruction, focusedWindowUnchanged: unchanged,
-        expectedToken: expected, nestedDialogs: nestedDialogs))
+        expectedToken: expected, nestedDialogs: nestedDialogs, onScreenBounds: onScreenBounds))
   }
 }
 

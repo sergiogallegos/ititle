@@ -15,6 +15,7 @@ public struct FocusedWindowEvidence: Sendable {
   public let sizeSettable: ProbeRead<Bool>
   public let directSheetCount: ProbeRead<Int>
   public let directSheetScanComplete: Bool
+  public let onScreenBounds: OnScreenBoundsEvidence
   public let nestedDialogs: NestedDialogScanSummary
   public let destructionNotification: ProbeRead<Bool>
   public let focusedWindowUnchanged: ProbeRead<Bool>
@@ -27,8 +28,10 @@ public struct FocusedWindowEvidence: Sendable {
     frame: ProbeRead<Rect>, positionSettable: ProbeRead<Bool>, sizeSettable: ProbeRead<Bool>,
     directSheetCount: ProbeRead<Int>, directSheetScanComplete: Bool,
     destructionNotification: ProbeRead<Bool>, focusedWindowUnchanged: ProbeRead<Bool>,
-    expectedToken: WindowToken?, nestedDialogs: NestedDialogScanSummary = .notScanned
+    expectedToken: WindowToken?, nestedDialogs: NestedDialogScanSummary = .notScanned,
+    onScreenBounds: OnScreenBoundsEvidence = .notSampled
   ) {
+    self.onScreenBounds = onScreenBounds
     self.nestedDialogs = nestedDialogs
     self.token = token
     self.environmentEpoch = environmentEpoch
@@ -84,6 +87,7 @@ public struct FocusedWindowEvidence: Sendable {
     position-settable=\(probeDescription(positionSettable)); size-settable=\(probeDescription(sizeSettable))
     direct-child-sheets=\(probeDescription(directSheetCount)); scan-complete=\(directSheetScanComplete)
     \(nestedDialogs.report)
+    \(onScreenBounds.report)
     destruction-notification=\(probeDescription(destructionNotification))
     focused-window-unchanged-at-checks=\(probeDescription(focusedWindowUnchanged))
     expected-token-match=\(expectedWindowMatches.map(String.init) ?? "not requested")

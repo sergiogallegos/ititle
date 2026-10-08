@@ -23,6 +23,14 @@ A status menu exposes paused/active/degraded state, reload configuration, and qu
 
 Dialogs, sheets, minimized windows, native fullscreen windows, and unsupported windows remain outside the tiled tree. An app-specific rule can float a window that classification gets wrong. Manual dragging temporarily suspends writes to that window; explicit re-tile restores management. The first version does not continuously undo the user's mouse movements.
 
+## Requested interaction preferences (planned)
+
+The running app should expose an **Enable iTile** switch. Disabled management leaves the app available in the menu bar, revokes new control work, and lets users use their windows normally. Re-enabling requires fresh inspection and explicit management intent; it must not replay stale plans. Pause and Quit remain available. Today only read-only inspection Pause/Resume exists; this management switch is a requested future feature.
+
+Mouse dragging and edge/corner resizing should work alongside keyboard commands. User movement or resizing suspends writes to the affected window until explicit re-tiling; the manager should not continually snap it back. This behavior and keyboard window control remain planned, with separate real-window acceptance required.
+
+A visible current-desktop number is requested for native desktop switching. Research a public-API source of actual desktop identity/number before implementing the indicator. Counting change notifications does not establish desktop numbers, and the UI must not present an inferred counter as the native desktop number. If reliable numbering cannot be established within the public-API boundary, document that limit and consider explicitly numbered iTile workspaces as a separate product decision.
+
 ## Desktop boundary
 
 Initial integration should be validated on one native desktop and one monitor. Public APIs do not supply a full reliable native Space identity/membership model. A Space-change notification is an invalidation signal, not a Space identifier.

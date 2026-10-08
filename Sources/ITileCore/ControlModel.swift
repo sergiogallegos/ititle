@@ -88,6 +88,7 @@ public enum ControlEvent: Sendable {
   case attach(AppToken)
   case appTerminated(AppToken)
   case windowDestroyed(WindowToken)
+  case registrySnapshot(ProbeRegistrySnapshot)
   case observation(WindowObservation)
   /// An explicit complete absolute plan, not a relative command or automatic retry.
   case tile([WindowToken: Rect])
@@ -135,6 +136,7 @@ public struct ControlModel: Sendable {
   }
   private struct Attachment: Sendable {
     let token: AppToken
+    var registryRevision: UInt64?
     var highestSerial: UInt64 = 0
     var sequence: UInt64 = 0
     var invalidatedAt: Double = 0
@@ -208,6 +210,33 @@ public struct ControlModel: Sendable {
       return []
     case .appTerminated(let app):
       if isCurrent(app) { removeApp(app) }
+      return []
+    case .registrySnapshot(let snapshot):
+      guard var attachment = apps[snapshot.app.pid], attachment.token == snapshot.app,
+        snapshot.environmentEpoch == environmentEpoch,
+        snapshot.revision > (attachment.registryRevision ?? 0),
+        snapshot.highestSerial >= attachment.highestSerial,
+        snapshot.windows.count <= 64,
+        snapshot.windows.allSatisfy({
+          $0.app == snapshot.app && $0.serial > 0 && $0.serial <= snapshot.highestSerial
+            && (live.contains($0) || $0.serial > attachment.highestSerial)
+        })
+      else { return [.rejected(.staleWork)] }
+      let previous = live.filter { $0.app == snapshot.app }
+      guard live.count - previous.count + snapshot.windows.count <= maximumWindows else {
+        return [.rejected(.capacity)]
+      }
+      for token in previous.subtracting(snapshot.windows) {
+        live.remove(token)
+        observations.removeValue(forKey: token)
+        desired.removeValue(forKey: token)
+        pending.removeValue(forKey: token)
+        dirty.remove(token)
+      }
+      live.formUnion(snapshot.windows)
+      attachment.highestSerial = snapshot.highestSerial
+      attachment.registryRevision = snapshot.revision
+      apps[snapshot.app.pid] = attachment
       return []
     case .windowDestroyed(let token):
       guard var attachment = apps[token.app.pid], attachment.token == token.app else { return [] }
@@ -354,7 +383,9 @@ public struct ControlModel: Sendable {
       validFrame(observation.frame)
     else { return false }
     if !live.contains(token) {
-      guard token.serial > app.highestSerial, live.count < maximumWindows else { return false }
+      guard app.registryRevision == nil, token.serial > app.highestSerial,
+        live.count < maximumWindows
+      else { return false }
       app.highestSerial = token.serial
       live.insert(token)
     }

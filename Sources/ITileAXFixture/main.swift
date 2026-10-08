@@ -107,6 +107,8 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
   private var window: FixtureWindow?
   private var structuralNodes: [FixtureStructuralNode] = []
   private var sheet: NSWindow?
+  private var secondTab: NSWindow?
+  private var visibilityPeer: NSWindow?
   private let state = NSTextField(labelWithString: "Ready — controlled by iTile P3 Lab")
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -114,6 +116,11 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
     let window = FixtureWindow(
       contentRect: NSRect(x: 200, y: 200, width: 420, height: 130),
       styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    if CommandLine.arguments.contains("--tab-probe") {
+      window.styleMask.insert(.resizable)
+      window.tabbingMode = .preferred
+      window.tabbingIdentifier = "local.itile.owned-tabs"
+    }
     window.title = "iTile P3 \(label) Fixture"
     window.isReleasedWhenClosed = false
     state.frame = NSRect(x: 20, y: 45, width: 380, height: 40)
@@ -124,6 +131,11 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
       NSApp.activate(ignoringOtherApps: true)
     }
     self.window = window
+    if CommandLine.arguments.contains("--desktop-probe") {
+      NSWorkspace.shared.notificationCenter.addObserver(
+        self, selector: #selector(desktopChanged),
+        name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+    }
     emit("ready")
     // Only this process's parent owns stdin. EOF exits; no listener or network service.
     Thread.detachNewThread { [weak self] in
@@ -135,7 +147,9 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
             "tree-system-dialog", "tree-wide", "tree-deep", "tree-cycle", "tree-budget",
             "tree-focus-loss", "tree-focus-switch", "tree-stall", "tree-sheet-remove",
             "tree-native-sheet-open",
-            "native-sheet", "close-sheet",
+            "native-sheet", "close-sheet", "tree-tab-group", "tree-tab-group-cycle",
+            "native-tabs-open", "native-tabs-first", "native-tabs-second", "native-tabs-close",
+            "visibility-peer-open", "visibility-peer-close", "visibility-hide", "desktop-status",
           ].contains(command)
         else { continue }
         DispatchQueue.main.async { [weak self] in
@@ -169,6 +183,21 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
             guard CommandLine.arguments.contains("--focused-probe") else { return }
             self?.window?.stallOnRoleRead = true
             emitFixtureEvent("window-stall-armed")
+            return
+          }
+          if command == "desktop-status" {
+            guard CommandLine.arguments.contains("--desktop-probe") else { return }
+            self?.emitDesktopStatus()
+            return
+          }
+          if command.hasPrefix("visibility-") {
+            guard CommandLine.arguments.contains("--visibility-probe") else { return }
+            self?.configureVisibility(command)
+            return
+          }
+          if command.hasPrefix("native-tabs-") {
+            guard CommandLine.arguments.contains("--tab-probe") else { return }
+            self?.configureNativeTabs(command)
             return
           }
           if command.hasPrefix("tree-") || ["native-sheet", "close-sheet"].contains(command) {
@@ -231,6 +260,10 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
           parent = child
         }
         parent.setAccessibilityChildren([node(.sheet, parent: parent)])
+      case "tree-tab-group", "tree-tab-group-cycle":
+        let tabs = node(.tabGroup, parent: group)
+        group.setAccessibilityChildren([tabs])
+        if command == "tree-tab-group-cycle" { tabs.setAccessibilityChildren([tabs]) }
       case "tree-cycle": group.setAccessibilityChildren([group])
       case "tree-budget":
         group.fault.transitionOnChildrenRead = { emitFixtureEvent("nested-budget-begin") }
@@ -277,6 +310,102 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
     }
     state.stringValue = "Nested probe scenario: \(command)"
     emitFixtureEvent(command + "-ready")
+  }
+
+  @objc private func desktopChanged() {
+    emitFixtureEvent("desktop-space-changed")
+    emitDesktopStatus()
+  }
+
+  /// Own-process AppKit ground truth, unavailable to production for other apps.
+  private func emitDesktopStatus() {
+    guard let window else { return }
+    let focused = NSApp.accessibilityFocusedWindow() as? NSWindow
+    let source: String
+    if focused === window {
+      source = "original"
+    } else if let visibilityPeer, focused === visibilityPeer {
+      source = "peer"
+    } else {
+      source = focused == nil ? "none" : "other"
+    }
+    let peerState = visibilityPeer.map { String($0.isOnActiveSpace) } ?? "absent"
+    let equal = visibilityPeer.map { String($0.frame == window.frame) } ?? "absent"
+    let frontmost =
+      NSWorkspace.shared.frontmostApplication?.processIdentifier
+      == ProcessInfo.processInfo.processIdentifier
+    emitFixtureEvent(
+      "desktop-status original-active=\(window.isOnActiveSpace) peer-active=\(peerState) equal=\(equal) focused=\(source) frontmost=\(frontmost) displays=\(NSScreen.screens.count)"
+    )
+  }
+
+  /// Controlled occlusion/identical-bounds evidence, never another app's windows.
+  private func configureVisibility(_ command: String) {
+    guard let window, sheet == nil, secondTab == nil, window.structuralChildren == nil else {
+      emitFixtureEvent("visibility-rejected")
+      return
+    }
+    switch command {
+    case "visibility-peer-open":
+      guard visibilityPeer == nil else { break }
+      let peer = NSWindow(
+        contentRect: window.contentRect(forFrameRect: window.frame),
+        styleMask: window.styleMask, backing: .buffered, defer: false)
+      peer.isReleasedWhenClosed = false
+      peer.tabbingMode = .disallowed
+      if CommandLine.arguments.contains("--desktop-probe") {
+        peer.collectionBehavior = .moveToActiveSpace
+      }
+      peer.title = "Owned visibility peer"
+      peer.orderFront(nil)
+      visibilityPeer = peer
+      emitFixtureEvent(
+        peer.frame == window.frame ? "visibility-peer-equal" : "visibility-peer-different")
+    case "visibility-peer-close":
+      visibilityPeer?.close()
+      visibilityPeer = nil
+    case "visibility-hide": NSApp.hide(nil)
+    default: return
+    }
+    emitFixtureEvent(command + "-ready")
+  }
+
+  /// Changes only this disposable application's windows using public AppKit APIs.
+  private func configureNativeTabs(_ command: String) {
+    guard let window, window.structuralChildren == nil, sheet == nil else {
+      emitFixtureEvent("native-tabs-rejected")
+      return
+    }
+    switch command {
+    case "native-tabs-open":
+      guard secondTab == nil else { break }
+      let tab = NSWindow(
+        contentRect: window.frame, styleMask: [.titled, .closable, .resizable],
+        backing: .buffered, defer: false)
+      tab.title = "Owned second tab"
+      tab.isReleasedWhenClosed = false
+      tab.tabbingMode = .preferred
+      tab.tabbingIdentifier = window.tabbingIdentifier
+      secondTab = tab
+      window.addTabbedWindow(tab, ordered: .above)
+      window.tabGroup?.selectedWindow = window
+      window.makeKeyAndOrderFront(nil)
+    case "native-tabs-first":
+      window.tabGroup?.selectedWindow = window
+      window.makeKeyAndOrderFront(nil)
+    case "native-tabs-second":
+      guard let secondTab else { break }
+      window.tabGroup?.selectedWindow = secondTab
+      secondTab.makeKeyAndOrderFront(nil)
+    case "native-tabs-close":
+      secondTab?.close()
+      secondTab = nil
+      window.makeKeyAndOrderFront(nil)
+    default: return
+    }
+    emitFixtureEvent(command + "-ready")
+    // Ground truth for this owned AppKit group, never a production AX proof.
+    emitFixtureEvent("native-tabs-count-\(window.tabGroup?.windows.count ?? 1)")
   }
 
   private func openNativeSheet() {

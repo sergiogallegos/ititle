@@ -67,4 +67,21 @@ final class ProbeTests: XCTestCase {
       DesktopCoordinates.flip(Rect(x: -100, y: 1000, width: 100, height: 100), primaryTop: 900).y,
       -200)
   }
+  func testRegistrySnapshotPreservesWatermarkAcrossCompleteAndSelectiveExpiry() {
+    let app = AppToken(pid: 42, generation: 1)
+    var registry = ProbeRegistry(app: app)
+    let tokens = registry.reconcile([10, 20])
+    registry.invalidate([10])
+    let partial = registry.snapshot(environmentEpoch: 3, revision: 1)
+    XCTAssertEqual(partial.windows, [tokens[1]])
+    XCTAssertEqual(partial.highestSerial, 2)
+    registry.invalidate()
+    let empty = registry.snapshot(environmentEpoch: 4, revision: 2)
+    XCTAssertTrue(empty.windows.isEmpty)
+    XCTAssertEqual(empty.highestSerial, 2)
+    let replacement = registry.reconcile([10])[0]
+    XCTAssertEqual(replacement.serial, 3)
+    XCTAssertEqual(registry.snapshot(environmentEpoch: 4, revision: 3).windows, [replacement])
+  }
+
 }

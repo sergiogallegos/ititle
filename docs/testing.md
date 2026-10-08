@@ -4,7 +4,7 @@ Run `scripts/format` after Swift edits. Run `scripts/verify` for strict official
 
 ## Current automated coverage
 
-The latest recorded verification passed 62 tests (51 core, 11 platform), including 26 control-model scenarios for admission, invalidation, bounded pending work, and late fake-worker results, plus thirteen focused-evidence/delivery/worker tests. Existing coverage includes nested geometry and gap conservation; invalid geometry and duplicate rejection; token retention/retirement and process generations; coordinate round trips; latency summaries; incomplete sheet evidence; dedicated worker ownership, isolation, bounded admission, stop and reuse; and fixture pipe short-message delivery/EOF. See [validation](validation.md) for the run history. No AX mutation, desktop integration, or performance claim is covered by these tests.
+The latest recorded source verification passed 116 tests (91 core, 25 platform), including pure control-model, focused evidence, preview projection, registry replacement/retirement, and dedicated-worker scenarios. Existing coverage includes nested geometry and gap conservation; invalid geometry and duplicate rejection; token retention/retirement and process generations; coordinate round trips; latency summaries; incomplete sheet evidence; dedicated worker ownership, isolation, bounded admission, stop and reuse; and fixture pipe short-message delivery/EOF. See [validation](validation.md) for the run history. No AX mutation, desktop integration, or performance claim is covered by these tests.
 
 Five M2.3 value tests cover retained unsupported-scope requirements, exclusions alongside missing evidence, unsupported/malformed reads, invalid geometry including edge overflow, and invalid observation intervals/sequences. Valid negative origins and zero-duration intervals remain projectable. See the [eligibility decision](decisions/0003-focused-eligibility.md).
 
@@ -48,3 +48,7 @@ Test ordered resize/focus/swap commands separately from coalesced absolute frame
 Control state/admission interleavings are now covered by the M2.1 simulation tests. Platform write, input, configuration, and broader layout-policy tests remain planned. Neither these simulations nor the existing probe tests establish real write safety.
 
 Bounded nested-dialog sampling has deterministic traversal and eligibility tests. Scoped live fixture/native-sheet checks are recorded; foreground and nested-read lifecycle checks remain separate and partial; see [M2.4 acceptance](m2-nested-dialogs.md). Unit success does not establish that application AX trees expose all dialogs or sheets.
+
+## Planned delivery/admission checks
+
+The [M2.10 contract](m2-delivery-admission.md) lists required pure-state and barrier-controlled fake-backend checks for retained receipts, exact acknowledgment, bounded shared draining, overload, and safety revocation. The read-only receipt/transport subset is implemented and verified in [M2.11](m2-read-only-delivery.md); the remaining semantic command/revocation and live admission requirements are proposed. Real handler and setter acceptance remain separate.

@@ -450,4 +450,28 @@ final class ControlModelTests: XCTestCase {
     XCTAssertEqual(model.reduce(.observation(sample(token(a), sequence: 3)), at: 1), [])
     XCTAssertEqual(model.reduce(.observation(sample(token(a, 3), sequence: 4)), at: 1), [])
   }
+  func testRegistryRetirementKeepsExecutingSlotUntilAcknowledgedAndBlocksNextSetter() throws {
+    var model = ready()
+    XCTAssertEqual(
+      model.reduce(
+        .registrySnapshot(
+          ProbeRegistrySnapshot(
+            app: a, environmentEpoch: 0, revision: 1, highestSerial: 1, windows: [token(a)])), at: 1
+      ), [])
+    _ = model.reduce(.tile([token(a): destination]), at: 1)
+    let target = try dispatch(&model, app: a)
+    let permit = try admit(&model, target: target, setter: .size)
+    XCTAssertEqual(
+      model.reduce(
+        .registrySnapshot(
+          ProbeRegistrySnapshot(
+            app: a, environmentEpoch: 0, revision: 2, highestSerial: 1, windows: [])), at: 1), [])
+    XCTAssertEqual(model.inFlightCount, 1)
+    XCTAssertTrue(model.observations.isEmpty)
+    XCTAssertTrue(model.desired.isEmpty)
+    XCTAssertEqual(model.reduce(.setterFinished(permit, .succeeded), at: 1), [.reconcile(a)])
+    XCTAssertEqual(model.inFlightCount, 0)
+    XCTAssertEqual(model.reduce(.admit(target, .position), at: 1), [.rejected(.staleWork)])
+  }
+
 }

@@ -28,7 +28,7 @@ Owned-fixture checks now cover positive findings, limits, cycles, budget, synchr
 4. Close/change the sheet during inspection, switch focus, and revoke permission. Confirm existing stale-result and permission guards still reject invalid observations.
 5. Check native AppKit sheets and representative application dialogs separately; report unsupported or absent relationships without claiming generic coverage. Confirm no window frame changes or keyboard capture.
 
-Next: investigate read-only native-tab evidence and an enforceable conservative exclusion policy for focused windows. Current-desktop visibility, supported scope, and live coordinator integration remain separate gates before mutation.
+[M2.5 source now adds tab-group evidence and conservative exclusion](m2-native-tabs.md) to this traversal. Scoped owned native-tab acceptance is recorded; representative application coverage remains pending. Current-desktop visibility, supported scope, and live coordinator integration remain separate gates before mutation.
 
 ## Reproducing explicit lab samples
 

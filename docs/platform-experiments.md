@@ -12,6 +12,8 @@ Pass: live windows retain tokens where correlation is supported; destroyed/resta
 
 ## P2 — Current-desktop visibility (critical gate)
 
+[M2.6](m2-desktop-visibility.md) now implements content-free focused on-screen bounds candidate diagnostics. Scoped owned overlap/hide/recovery and equal-frame cross-desktop observations are recorded; candidate counts establish no AX identity mapping and do not complete this gate.
+
 Compare AX observations with public on-screen CGWindowList metadata using available PID/layer/bounds evidence. Do not assume a CG window number is directly available from an AX element, use a title match, or call a private bridge. Bounds/PID matching is evidence only, especially when windows overlap or have identical geometry.
 
 Scenarios: two native desktops with same-app/same-size windows; a fully occluded window; minimized and hidden apps; native fullscreen; Stage Manager; Mission Control; screen lock; missing metadata without capture permission. Confirm what 'on screen' means for enrollment rather than interpreting it as unobscured pixels.

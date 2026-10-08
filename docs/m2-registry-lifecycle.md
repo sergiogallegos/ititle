@@ -1,0 +1,27 @@
+# M2.9 — Bounded explicit-read registry/lifecycle synchronization
+
+Implemented for the read-only app, with deterministic tests and scoped owned-window foreground-handler acceptance. Production mutation scope remains empty. This replaces M2.8's implicit ordered introduction of preview tokens with a worker-owned tracked-set replacement protocol.
+
+## Replacement contract
+
+`ProbeRegistrySnapshot` carries only an application token, environment epoch, monotonically increasing reply revision, highest allocated window serial, and the complete set of tokens currently tracked by that worker. It contains no AX objects, titles, document paths, OS window identifiers, or eligibility assertions. A tracked set is not an enumeration of all OS windows or proof of desktop membership.
+
+Each explicit per-application or focused reply carries its registry snapshot in the same callback, including backend failures. The existing public result-only worker methods remain available for diagnostic callers. Snapshots are built on the dedicated worker after a bounded drain of at most 64 run-loop events. Observed destruction, drain overflow, or absent observer conservatively expires all tracked identities. Selectively unsupported identities expire before the snapshot. No per-notification main-thread task queue or background polling is added.
+
+The app serializes snapshot reduction on its main actor before using the corresponding reply. Even a superseded report can retire tracked records if its snapshot still matches the current application attachment, epoch, and revision. Stale epochs, replaced processes, old revisions, malformed token sets, regressing watermarks, retired-token resurrection, and capacity overflow are rejected without partially replacing registry records. A preview requires an accepted registry replacement; focused evidence alone cannot introduce a production preview token. Historical candidate retention also requires that token to remain in the accepted tracked set.
+
+The control model removes absent tokens from observations, desired/pending frames, and dirty/live sets. An already executing simulated operation keeps its application slot until acknowledgment, and retirement prevents the next setter from being admitted. Retained tokens may be observed in either serial order; newly introduced tokens must exceed the prior watermark. Monotonic watermarks retire missing identities without accumulating tombstones. The original observation-only serial rule remains available to the existing pure simulations, but the production preview uses explicit registry state.
+
+Limits remain 16 attached apps, 64 tracked tokens per worker, and 256 tracked tokens across the model. A rejected replacement blocks that preview; later explicit replies can recover after records or applications retire. There is no silent reset, replacement worker, or capacity bypass. Scalar serials/revisions use the existing session-monotonic integer allocation policy.
+
+## Verification and acceptance
+
+`scripts/format` and `scripts/verify` pass 99 tests: 87 core and 12 platform. New checks cover missing registries, complete tracked sets, retirement and resurrection, stale/malformed/process/epoch rejection, per-worker and global capacity, capacity recovery, serial watermark preservation, and acknowledged retirement during simulated execution. A fake backend verifies that failure and snapshot share one callback and remain on the owning dedicated thread. Replacement churn over 256 observations retains one current observation rather than accumulating obsolete records.
+
+A separate disposable debug app invoked the normal foreground preview handler against an owned native-AppKit tab fixture. Fourteen fresh reports accepted window 1, window 2, then retained window 1 in the same epoch; closing and recreating the peer conservatively issued new serials through window 9. All previews remained `planRejected` / `invalidPlan`, retained the three unproven safety requirements, and performed no source-window actions. Both test apps exited normally. See [validation](validation.md) for timestamps, hashes, and excluded attempts.
+
+## Remaining boundary and next task
+
+This is a complete replacement protocol for explicit read-only replies. It does not deliver every destruction immediately while idle, establish uninterrupted lifecycle continuity, implement an atomic setter mailbox or enable live enrollment. [M2.11](m2-read-only-delivery.md) now adds acknowledgment before another app read is admitted. The prior M2.8 permission/Space/Pause experiments apply to their recorded source; they were not rerun as acceptance of this changed worker completion path. The release bundle was not rebuilt or its grant changed during this task.
+
+The [M2.10 delivery/admission contract](m2-delivery-admission.md) now specifies bounded worker-to-owner delivery, acknowledgment, overload handling, and admission ordering. Its read-only receipt/transport subset is now implemented in [M2.11](m2-read-only-delivery.md). Next: bounded semantic commands and synchronized revocation with fake-worker admission before live coordinator integration. Resolve remaining visibility/tab/dialog eligibility providers, physical-display acceptance, and explicitly opted-in setter acceptance separately. The requested management switch, mouse drag/resize coexistence, and desktop-number feasibility remain [planned product preferences](design.md).

@@ -32,6 +32,8 @@ Quit revokes admission immediately and does not wait indefinitely for worker tea
 
 ## Bounded event processing
 
+[M2.10](m2-delivery-admission.md) specifies receipt acknowledgment, one shared owner drain, retained-payload limits, and synchronous revocation ordering for the next transport implementation. It refines the proposed bounds below; read-only delivery acknowledgment is implemented in [M2.11](m2-read-only-delivery.md), while semantic buffering and setter admission remain proposed.
+
 - Keep user commands in order. Relative resize, focus, swap, and toggle are semantic operations; do not discard them as if they were absolute frames.
 - Coalesce repeated observation invalidations by app/window. Duplicate move events can request one fresh observation.
 - After ordered reduction, replace obsolete pending absolute frame targets per window with the latest target. Never overlap write sequences in one app.
