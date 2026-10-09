@@ -63,3 +63,7 @@ Acceptance for this next task:
 The live coordinator, atomic setter admission mailbox, frame application policy, and opted-in real setter checks remain subsequent tasks. Completing a blocked preview will not close the platform eligibility gates.
 
 The specified source integration and deterministic checks are now implemented in [M2.8](../m2-read-only-preview.md). Its separate scoped foreground-handler/report, operator-driven TextEdit menu, and in-flight Pause/native desktop/LaunchServices permission-loss acceptance do not establish generic application coverage or production eligibility. The bounded explicit-read registry replacement protocol is now implemented in [M2.9](../m2-registry-lifecycle.md); remaining acceptance and live delivery/admission contracts still precede live control integration.
+
+## M2.25 provider follow-up
+
+[The public-API feasibility review](../m2-provider-feasibility.md) additionally considers AppKit active-Space window-number enumeration. It provides membership for known numbers without an AX identity bridge, so this decision remains unchanged. An owned-fixture read-only snapshot is selected for ground-truth experiments only; it cannot override production eligibility.

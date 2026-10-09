@@ -901,3 +901,124 @@ Implemented [the manually driven simulation owner adapter](m2-simulation-owner.m
 The initial sandboxed check was blocked by SwiftPM's nested manifest sandbox; verification outside that restriction proceeded. Adapter tests then exposed missing acknowledgment support for reserved step receipts. The gate now accepts the reserved transition and requires reservation in owner-managed mode; final verification passed. A daemon restart interrupted the turn after source edits; the preserved workspace was inspected before continuing. No new real-window or performance acceptance is claimed.
 
 Next: bounded shared simulation command/reply delivery and priority safety ingress, including wakeup/finalization races and publication during owner consumption. Real readback, multi-window same-app sequences, live setters, mouse interaction, desktop numbering, and supported eligibility remain unimplemented. M2.12 and M2.13 changes are local and uncommitted; the previously pushed commit remains `53c8643`.
+
+
+## 2026-10-09 09:22 MDT — Commit/push and M2.14 shared simulation delivery
+
+As requested, verified the completed M2.12/M2.13 work (143 tests), staged it, committed as `d9fc97a` (`Add bounded simulation commands and matching operation cleanup`), and pushed successfully to `origin/main` before continuing. The subsequent M2.14 change set is new local work and remains uncommitted.
+
+Implemented [bounded shared simulation delivery](m2-shared-simulation-delivery.md): one serialized drain chain, at most eight replies and eight commands per pass, rotating reply selection, fixed priority safety flags, exact reply routing/removal before acknowledgment, persistent app quarantine, and retained retiring process routes. Safety closes the gate at ingress, independently of owner progress or FIFO saturation. Repeated pending epoch-bearing signals coalesce while every signal still revokes admission. Owner application avoids double gate epoch advancement. Gate actual-phase checks reject premature/mismatched replies; an exact later completion from a quarantined executing call remains consumable for cleanup.
+
+`scripts/format` and final `scripts/verify` passed 152 tests (101 core, 51 platform), with strict formatting, debug build, metadata lint, shell syntax, and lab script typechecking. Nine added tests cover resource saturation and FIFO dispositions; immediate Disable with a full queue; reply/safety publication during owner consumption and after finalization; duplicate/replay quarantine; quarantined late cleanup; safety between command reduction and publication; 1,000 paired permission/environment signals with one wakeup and fresh epoch recovery; retired routing/PID replacement; and a barrier-held scheduler post concurrent with command/Quit ingress. All prior tests remain passing. Local Markdown link validation and `git diff --check` passed.
+
+No installed release app, permission grant, real window, keyboard interception, display configuration, or production read-only reply path changed. No real-window acceptance or latency result is claimed. Next task: complete fake-worker/readback sequencing and an end-to-end stalled-peer check, including review of same-app multi-window plans before complete plan execution. Production eligibility and mutation remain blocked.
+
+
+## 2026-10-09 09:33 MDT — M2.15 fake worker/readback sequencing
+
+Implemented [the internal dedicated fake-worker runtime](m2-fake-worker-readback.md), readback-required gate/owner mode, shared readback delivery, and exact external model readback events. The existing standalone position-terminal simulation mode remains available. Matching readback can establish synthetic observed geometry; setter success alone cannot. Readback observation time must follow the actual readback permit. The gate remains occupied through exact receipt reservation, model reduction, and terminal acknowledgment.
+
+`scripts/format` and final `scripts/verify` passed 160 tests (103 core, 57 platform), including strict formatting, debug build, metadata lint, shell syntax, and lab script typecheck. Eight added tests cover core flight/revision/replay identity, actual readback-admission timing, successful off-main sequencing, a blocked app alongside healthy peer readback and responsive Quit, Pause during blocked readback, five invalid/unknown readback variants, and physical worker capacity while retirement is blocked. Runtime tests signal Stop and wait for actual worker-exit callbacks. A pure explicit bootstrap replaced an initial Task-order assumption; no timed sleeps are used to establish sequencing. Initial compilation found a missing readback envelope declaration, which was added before final verification.
+
+Reviewed same-app multi-window behavior: it stays explicitly unsupported until a bounded cursor and per-window retirement/revision protocol exist. No watermark relaxation or implicit per-window re-tile was introduced. Next task is bounded same-app sequence simulation, including failure/new revision/retirement and stalled-peer checks.
+
+No production app handler, AX setter, permission grant, installed release bundle, real window, desktop, or monitor configuration changed. Fixed logical test time is not evidence of real elapsed freshness or latency. No manual real-window acceptance is claimed. M2.14 and M2.15 changes remain local and uncommitted; `origin/main` remains at the requested prior push `d9fc97a`.
+
+
+## 2026-10-09 09:46 MDT — M2.16 bounded same-app simulation plans
+
+Implemented [bounded same-app plan sequencing](m2-same-app-plans.md) in readback-required runtime mode. Pure cursors bind ordered windows to one command/revision; gate publication under a reused ticket requires its exact cursor token, and only accepted readback plus exact terminal acknowledgment advances it. At most 64 windows per app and 256 per installed complete plan are retained. No per-window re-tile command or general watermark relaxation was introduced. The standalone owner mode remains unchanged unless multi-window simulation is explicitly enabled.
+
+`scripts/format` and final `scripts/verify` passed 170 tests (106 core, 64 platform), including build, strict formatting, metadata lint, shell syntax, and lab script typecheck. Ten added tests cover pure cursor order/bounds/malformed identity, command/execution stamp scope, two-window completion in one revision, failed-app/healthy-peer behavior, barrier-held app uncertainty with shared-ticket peer continuation, new revision during an admitted call, 64-window execution and rejection of a 65th window, registry removal before continuation, and destruction between windows. The maximum test executes 192 fake backend calls. The existing retired-route test now also rejects an occupied duplicate old receipt while proving replacement admission remains available.
+
+Initial shared-ticket tests exposed that activation still validated every affected app after an atomic command reduction. Added per-app execution activation/checks while preserving whole-command validation. Barrier control was strengthened so the healthy peer cannot finish before uncertainty ingress. Final tests passed after this correction. Registry/destruction and unpublished preparation now cancel unusable app cursors and pending targets. Retired duplicate routing no longer latches unknown global uncertainty for a replacement process. Source edits were followed by final formatting/verification; local Markdown links and `git diff --check` passed.
+
+All work remains simulation-only with fixed logical timestamps and synthetic eligible observations. No production handler, AX setter, permission grant, release bundle, real window, desktop, or monitor changed. No real-window or performance acceptance is claimed. M2.14–M2.16 changes are local and uncommitted; the previous requested push remains `d9fc97a`.
+
+Next: consolidate complete-plan simulation acceptance and review production adapter/eligibility requirements against the still-empty supported scope before live wiring. Requested management enable/disable UI, mouse coexistence, and desktop numbering remain planned product tasks.
+
+
+## 2026-10-09 09:53 MDT — M2.17 production boundary audit
+
+Completed [the production readiness review](m2-production-readiness.md), consolidating M2.12–M2.16 simulation acceptance and comparing it with the production eligibility assessment, preview wrapper, app composition, dedicated reader, and observer processing. The supported mutation scope remains empty. Desktop visibility, native-tab safety, and nested-dialog safety remain unproven; no synthetic eligibility or fake runtime was wired to production.
+
+Recorded proposed adapter obligations for evidence provenance/expiry, dedicated handle ownership, synchronous safety ingress, exact readback acknowledgment, bounded retirement, and explicit user control. The audit found existing unchecked lifecycle issuers despite checked simulation counters. The next source task is conservative exhaustion handling across the read-only path and pure model, with value-level boundary tests.
+
+Documentation-only changes; no source tests were rerun. The last source verification remains the M2.16 run of 170 passing tests. Local Markdown links and whitespace were checked after this review. No GUI, permission, installed app, real window, or monitor change was made; no new manual or performance acceptance is claimed. M2.14–M2.17 remain local and uncommitted; the last requested push remains `d9fc97a`.
+
+
+## 2026-10-09 10:02 MDT — M2.18 lifecycle issuer exhaustion
+
+Implemented [checked lifecycle-counter exhaustion](m2-counter-exhaustion.md) across app requests/activation/process generations, dedicated reader identities/focus/observation/registry revisions, token-registry batches, and pure model epochs/revisions/admission. Exhaustion stops new work without resetting identity. Exact admitted-operation cleanup remains possible after model stopping. Production preview exposes terminal model exhaustion; worker exhaustion during registry publication discards the earlier result and permanently closes new mailbox admission while preserving receipt acknowledgment.
+
+Final `scripts/format` and `scripts/verify` passed 177 tests (112 core, 65 platform), including build, formatting, metadata lint, shell syntax, and lab script typecheck. Added six core boundary tests and one dedicated-worker test exercising both report and focused paths through exhaustion, acknowledgment, rejection, and teardown. Initial test compilation rejected an equality comparison on a non-Equatable event; explicit event/time pairs fixed it. A sandboxed manifest compilation was also blocked; final verification outside that restriction passed. Local Markdown links and `git diff --check` passed.
+
+No real-window, permission, release-bundle, display, or keyboard action was performed. Production eligibility remains unknown/ineligible. No manual UI/AX acceptance or performance result is claimed. Next: read-only evidence provenance/expiry contract and unsupported coverage, before any provider eligibility proposal. M2.14–M2.18 remain local and uncommitted; last requested push remains `d9fc97a`.
+
+
+## 2026-10-09 10:12 MDT — M2.19 evidence provenance/expiry contract
+
+Specified [read-only evidence provenance and expiry](m2-evidence-provenance.md) after reviewing the focused value projection, eligibility assessment, structural summaries, and recorded visibility/tab/dialog limits. The proposed envelope has fixed source/requirement pairings and coverage codes, enclosing-request intervals, owner-use context, and diagnostic freshness assessment. No initial source/coverage code can establish safety or clear the three retained requirements.
+
+The contract specifies malformed/future/expired rejection, an exact expiry boundary, unmeasured freshness without an approved age policy, newer incomplete evidence superseding older evidence, revocation preventing revival after resume, bounded retention, and historical diagnostics retaining original attribution. Next source acceptance is pure values and deterministic diagnostic projection/rejection tests; reader/UI wiring and provider acceptance follow separately.
+
+Documentation-only work. Local Markdown link validation and `git diff --check` passed. Source tests were not rerun; latest source verification remains 177 passing tests from M2.18. No real-window, permission, bundle, monitor, or keyboard action was performed, and no manual or performance acceptance is claimed. M2.14–M2.19 remain local and uncommitted; the last requested push remains `d9fc97a`.
+
+
+## 2026-10-09 10:19 MDT — M2.20 pure provenance values
+
+Implemented [the pure diagnostic evidence envelope and assessment](m2-evidence-values.md) with canonical source/requirement mapping, enclosing-request attribution, deduplicated fixed issue codes, owner-use context, explicit age-policy assessment, and conservative current observation projection. No public source override or eligible branch exists. Original historical exclusions and all three unsupported scope requirements remain available even on rejection. No cache, issuer, automatic action, system clock, or platform objects were added.
+
+`scripts/format` and `scripts/verify` passed 188 tests (123 core, 65 platform), including build, formatting, metadata lint, shell syntax, and lab script typecheck. Eleven added tests cover source/coverage preservation, positive incomplete findings, CG candidates, malformed values/counts, invalid identity/interval/policy/expiry, sequence/context/registry rejection, exact expiry, revival rejection, and geometry/capability projection. Build emitted three existing captured-variable warnings in `SimulatedDeliveryTests`; no new evidence-value warning was emitted. Local Markdown links and `git diff --check` passed.
+
+Only pure core source/tests and documentation changed. No reader/UI wiring, production policy age, real AX read, permission, bundle, window, display, or keyboard action was performed. Next is historical provenance in focused read-only reply/report delivery with unmeasured freshness, retaining existing preview and eligibility boundaries. M2.14–M2.20 remain local and uncommitted; last requested push remains `d9fc97a`.
+
+
+## 2026-10-09 10:30 MDT — M2.21 focused historical provenance delivery
+
+Wired [historical provenance reports](m2-focused-provenance-report.md) into focused inspection/revalidation/preview replies. Owner-use context is captured after the existing preview revocation and before enqueueing; the value comes from the model's admission generation. Each bounded app attachment retains one scalar watermark for accepted worker sequences, without issuing another sequence or caching envelopes. Metadata/context rejection prevents candidate/preview use; existing early stale-delivery checks remain. Freshness is unmeasured with no policy, or invalid for malformed time, and all scope requirements remain unproven.
+
+Final `scripts/format` and `scripts/verify` passed 195 tests (130 core, 65 platform), including build, formatting, metadata lint, shell syntax, and lab script typecheck. Seven new pure integration/report tests cover formatting, duplicate/newer-incomplete evidence, context failure/recovery, process replacement, shared model revocation with blocked preview, malformed samples, and content/time preservation. The three existing captured-variable warnings in `SimulatedDeliveryTests` were emitted; no new provenance/report warning was emitted. Local Markdown links and `git diff --check` passed.
+
+No real AX call, installed bundle replacement, permission, real window, desktop/display, or keyboard action was performed. Native rebuilt menu/report acceptance remains pending and is the next task; compilation/value tests are not that acceptance. Production mutation scope remains empty. M2.14–M2.21 remain local and uncommitted; the last requested push remains `d9fc97a`.
+
+
+## 2026-10-09 17:35 UTC — M2.22 native provenance audit and partial lifecycle acceptance
+
+Packaged the current source and verified its ad-hoc release signature. [The acceptance audit](m2-native-provenance-acceptance.md) records exact build hash, OS, two reported scale-1 displays (including negative origin), native operator-driven inspection and blocked preview, and separate fixed-driver foreground-handler results. Native source app/version remains unconfirmed; it is not labeled as owned-fixture coverage. Native intermediate revalidation capture was missed; the final blocked preview was captured before further invalidation.
+
+Owned-fixture same-handler checks captured a matching token at sequences 1/2 with unchanged (200,722,420,158) frame; Pause rejected inspection; fresh Resume used a new token at epoch 2/sequence 3 and new provenance context; controlled focused-accessor hiding produced focus-loss rejection. Post-focus recovery is unaccepted because fixture reactivation confirmation missed its deadline. Earlier capture/environment invalidation failures are recorded without a production recovery claim. Test children were stopped. No source behavior or permission scope changed; source verification remains M2.21's 195 passing tests. Documentation links and whitespace checks passed after recording results.
+
+Next: bounded tracing of the owned-fixture post-focus activation failure and a separately captured fresh recovery. M2.14–M2.22 remain local and uncommitted; last requested push remains `d9fc97a`.
+
+
+## 2026-10-09 17:44 UTC — M2.23 bounded focus recovery
+
+[Bounded parent/fixture event tracing](m2-focus-recovery.md) did not reproduce M2.22’s reactivation timeout. Both the existing fixture and a fixture rebuilt from current source confirmed reactivation after focused-accessor hiding; iTile discarded the fault result and a fresh explicit foreground-handler inspection produced accepted historical provenance. The current fixture also confirmed its original window active/focused/frontmost on two displays. Recovery advanced from epoch 0/sequence 1 to epoch 1/sequence 3 with a new token and retained unknown eligibility. Geometry was unchanged in the sampled pair. Both owned children exited normally; the normal app was restored.
+
+Fixture release packaging/signature verification passed. No Swift source behavior changed; latest source verification remains 195 passing tests. The earlier timeout cause remains unresolved; no native-menu recovery, client IPC timing, or broad repeatability claim is made. Next: a checked-in bounded recovery lab. Changes remain local and uncommitted.
+
+
+## 2026-10-09 17:52 UTC — M2.24 checked-in recovery lab
+
+Implemented [the bounded Swift foreground recovery lab](focus-recovery-lab.md), using only Apple frameworks and fixed parent-child protocols. Formatting, standalone compilation, and final `scripts/verify` passed 195 existing tests plus the lab’s parser self-check. Verification initially encountered a sandboxed manifest-cache restriction; the final unrestricted verification passed. Existing-instance refusal was also observed without launching children.
+
+Final real acceptance is **environment-invalidation recovery**, not focus-specific discard capture: the fixture produced its focused-read begin/hide/end events, the app reported desktop/display/sleep invalidation, and a fresh inspection advanced epoch 0/sequence 1 to epoch 1/sequence 2 with accepted historical provenance and unchanged fixture geometry. Both owned children exited normally; normal read-only iTile was restored. Earlier incomplete runs exposed and corrected fixture fault-arming order and an invalid two-sequence-gap assumption. No production behavior changed, and the earlier activation timeout cause remains unresolved.
+
+Next: supported-window evidence-provider review for the remaining safety gates. Changes remain local and uncommitted.
+
+
+## 2026-10-09 — M2.25 safety-provider feasibility review
+
+Reviewed the current eligibility/provenance boundary, previous collision/tab/dialog evidence, installed macOS 27.0 SDK public declarations, and Apple documentation. [The review](m2-provider-feasibility.md) finds AppKit active-Space window-number enumeration useful for known identities but insufficient to bind arbitrary AX tokens. Own AppKit tab/sheet state is suitable for controlled fixture instrumentation; no reviewed strategy clears all production requirements. ADR 0004 remains unchanged.
+
+Specified the next source task: an explicitly enabled, versioned, bounded owned-fixture safety snapshot and lab consumer, separate from production evidence sources and eligibility. It must not invoke the fixture’s faulting focused AX accessor. Exact identity binding, transition coverage, freshness, and admission remain future gates. Documentation-only work; no GUI, permission, fixture, mutation, or new platform acceptance occurred. Latest verification remains M2.24’s 195 tests plus the lab parser self-check. Local links and whitespace checks passed. Changes remain local and uncommitted.
+
+
+## 2026-10-09 18:03 UTC — M2.26 owned-fixture safety snapshots
+
+Implemented [the separate fixture snapshot protocol, producer, consumer, and owned-process lab](m2-fixture-safety-snapshot.md). Fixed versioned metadata retains explicit unavailable states and conservative own-fixture coverage. One outstanding request is correlated by run/request/sequence and enclosing time; malformed/replayed/wrong-run records are rejected. Checked issuance closes on exhaustion. Snapshot reads avoid faulting AX accessors. No production target depends on the new protocol module or clears eligibility requirements.
+
+Final formatting and `scripts/verify` passed 200 tests (130 core, 65 platform, five new protocol tests) plus the recovery-lab parser check. Release fixture packaging/signature verification passed. The final two-display owned-process run accepted 14 scenario samples covering baseline, hide/recovery, native tabs/selection/closure, one-tab visible/hidden bar, native sheet open/close, and retained structural/focused faults across repeated snapshots. An initial two-tab hidden-bar expectation was not met; it remained an incomplete run with normal cleanup. The final lab uses one-tab bar transitions and does not claim the unsupported case. Artifact hashes, timings, and bottom-origin display rectangles are recorded in the task document.
+
+The fixture exited normally; normal iTile was left running. No AX client read, permission change, user-window mutation, desktop/display configuration action, or new production scope occurred. Next: explicit fixture-local AX identity binding and paired observations. Changes remain local and uncommitted.

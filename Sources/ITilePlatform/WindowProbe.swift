@@ -5,6 +5,7 @@ import ITileCore
 /// Constructed and used exclusively on the worker thread, including teardown.
 /// The test adapter can block reads without touching real applications or AX permission.
 protocol ProbeBackend: AnyObject {
+  var countersExhausted: Bool { get }
   func inspect(epoch: UInt64, cancelled: () -> Bool) -> String
   func inspectFocused(epoch: UInt64, expected: WindowToken?, cancelled: () -> Bool)
     -> FocusedProbeResult
@@ -14,6 +15,7 @@ protocol ProbeBackend: AnyObject {
 }
 
 extension ProbeBackend {
+  var countersExhausted: Bool { false }
   func registrySnapshot(epoch: UInt64) -> ProbeRegistrySnapshot? { nil }
 }
 
@@ -31,6 +33,7 @@ public struct FocusedProbeTraceEvent: Sendable {
 public final class WindowProbe: @unchecked Sendable {
   public let token: AppToken
   private let lock = NSLock()
+  private var issuerExhausted = false
   private enum Request: Sendable {
     case report(UInt64, @Sendable (String, ProbeRegistrySnapshot?, ProbeReceipt) -> Void)
     case focused(
@@ -119,6 +122,10 @@ public final class WindowProbe: @unchecked Sendable {
 
   private func enqueue(_ request: Request) -> Bool {
     lock.lock()
+    guard !issuerExhausted else {
+      lock.unlock()
+      return false
+    }
     guard let id = receiptState.admit() else {
       let terminal = receiptState.phase == .stopped
       let handles = (source, loop)
@@ -227,8 +234,10 @@ public final class WindowProbe: @unchecked Sendable {
             let registry = invalidated(id) ? nil : state.registrySnapshot(epoch: epoch)
             let valid = validRegistry(registry, epoch: epoch)
             let bounded = Self.boundedReport(
-              valid ? report : "Invalid registry replacement; inspection excluded.")
-            return { completion(bounded, valid ? registry : nil, $0) }
+              state.countersExhausted
+                ? "Lifecycle counter exhausted; inspection stopped."
+                : (valid ? report : "Invalid registry replacement; inspection excluded."))
+            return { completion(bounded, valid && !state.countersExhausted ? registry : nil, $0) }
           case .focused(let epoch, let expected, let trace, let completion):
             // Opt-in, metadata-only diagnostics on this dedicated thread. The
             // receiver must not block or perform AX calls. Finish means backend
@@ -246,10 +255,19 @@ public final class WindowProbe: @unchecked Sendable {
                 phase: .workerFinished, uptime: ProcessInfo.processInfo.systemUptime))
             let registry = invalidated(id) ? nil : state.registrySnapshot(epoch: epoch)
             let valid = validRegistry(registry, epoch: epoch)
+            let exhausted = state.countersExhausted
             return {
-              completion(valid ? result : .failure(.identityChanged), valid ? registry : nil, $0)
+              completion(
+                exhausted
+                  ? .failure(.counterExhausted) : (valid ? result : .failure(.identityChanged)),
+                valid && !exhausted ? registry : nil, $0)
             }
           }
+        }
+        if state.countersExhausted {
+          lock.lock()
+          issuerExhausted = true
+          lock.unlock()
         }
         if let receipt = receipt(for: id) { deliver(receipt) }
       } else {
@@ -296,6 +314,7 @@ private final class ProbeState: ProbeBackend {
   var observerError: AXError = .success
   var diagnosticElements: [AXUIElement] = []
   var expiringIdentities: Set<Int> = []
+  var countersExhausted = false
   var focusSequence: UInt64 = 0
   var focusChanges: UInt64 = 0
   var focusNotificationError: AXError?
@@ -317,7 +336,7 @@ private final class ProbeState: ProbeBackend {
         if notification as String == kAXUIElementDestroyedNotification {
           state.destructionObserved = true
         } else if notification as String == kAXFocusedWindowChangedNotification {
-          state.focusChanges += 1
+          if !LifecycleCounter.advance(&state.focusChanges) { state.countersExhausted = true }
         } else if notification as String == kAXTitleChangedNotification {
           state.diagnosticNotification?(ProcessInfo.processInfo.systemUptime)
         }
@@ -356,7 +375,13 @@ private final class ProbeState: ProbeBackend {
     registry.invalidate(expiringIdentities)
     expiringIdentities.removeAll()
     destructionObserved = false
-    registryRevision += 1
+    guard !countersExhausted, !registry.exhausted,
+      LifecycleCounter.advance(&registryRevision)
+    else {
+      countersExhausted = true
+      clearIdentity()
+      return nil
+    }
     return registry.snapshot(environmentEpoch: epoch, revision: registryRevision)
   }
 
@@ -373,6 +398,7 @@ private final class ProbeState: ProbeBackend {
   }
 
   func inspect(epoch: UInt64, cancelled: () -> Bool) -> String {
+    guard !countersExhausted else { return "Lifecycle counter exhausted; inspection stopped." }
     if environmentEpoch != epoch {
       clearIdentity()
       environmentEpoch = epoch
@@ -416,11 +442,19 @@ private final class ProbeState: ProbeBackend {
       }
     }
     let previous = elements
+    let newCount = values.filter { element in
+      !previous.contains(where: { CFEqual($0.element, element) })
+    }.count
+    guard newCount <= Int.max - nextIdentity else {
+      countersExhausted = true
+      clearIdentity()
+      return "Lifecycle counter exhausted; inspection stopped."
+    }
     elements = values.map { element in
       if let old = previous.first(where: { CFEqual($0.element, element) }) {
         return (old.id, element)
       }
-      nextIdentity += 1
+      LifecycleCounter.advance(&nextIdentity)
       return (nextIdentity, element)
     }
     if let observer {
@@ -430,6 +464,11 @@ private final class ProbeState: ProbeBackend {
       }
     }
     let tokens = registry.reconcile(elements.map(\.id))
+    guard !registry.exhausted else {
+      countersExhausted = true
+      clearIdentity()
+      return "Lifecycle counter exhausted; inspection stopped."
+    }
     var lines = [
       "Read-only snapshot: app-\(token.generation)", ipcLine,
       "Visibility/eligibility: unproven; no enrollment or window mutation.",
@@ -778,6 +817,7 @@ extension ProbeState {
   fileprivate func inspectFocused(epoch: UInt64, expected: WindowToken?, cancelled: () -> Bool)
     -> FocusedProbeResult
   {
+    guard !countersExhausted else { return .failure(.counterExhausted) }
     let start = ProcessInfo.processInfo.systemUptime
     if environmentEpoch != epoch {
       clearIdentity()
@@ -816,11 +856,21 @@ extension ProbeState {
         clearIdentity()
         return .failure(.limit)
       }
-      nextIdentity += 1
+      guard LifecycleCounter.advance(&nextIdentity) else {
+        countersExhausted = true
+        clearIdentity()
+        return .failure(.counterExhausted)
+      }
       elements.append((nextIdentity, window))
     }
     let index = elements.firstIndex(where: { CFEqual($0.element, window) })!
-    let windowToken = registry.reconcile(elements.map(\.id))[index]
+    let tokens = registry.reconcile(elements.map(\.id))
+    guard !registry.exhausted else {
+      countersExhausted = true
+      clearIdentity()
+      return .failure(.counterExhausted)
+    }
+    let windowToken = tokens[index]
     let destruction: ProbeRead<Bool>
     if let observer {
       let error = AXObserverAddNotification(
@@ -906,7 +956,11 @@ extension ProbeState {
       clearIdentity()
       return .failure(.cancelled)
     }
-    focusSequence += 1
+    guard !countersExhausted, LifecycleCounter.advance(&focusSequence) else {
+      countersExhausted = true
+      clearIdentity()
+      return .failure(.counterExhausted)
+    }
     return .observation(
       FocusedWindowEvidence(
         token: windowToken, environmentEpoch: epoch,

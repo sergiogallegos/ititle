@@ -80,6 +80,7 @@ public enum ControlState: Equatable, Sendable {
 }
 public enum ControlRejection: Equatable, Sendable {
   case invalidTime, permission, stopped, capacity, invalidPlan, staleObservation, staleWork
+  case counterExhausted
 }
 
 /// Identity of an externally admitted simulation sequence, scoped to process lifetime.
@@ -134,6 +135,8 @@ public enum ControlEvent: Sendable {
   case operationStepFinished(OperationStepResult)
   /// Actual terminal denial/completion, consumed before acknowledging the gate slot.
   case operationTerminated(ControlOperationID)
+  case operationReadbackRequested(ControlOperationID)
+  case operationReadbackFinished(ControlOperationID, ApplyResult)
 }
 
 public enum ControlEffect: Equatable, Sendable {
@@ -163,7 +166,7 @@ public struct ControlModel: Sendable {
     case executing(SetterPermit)
     case readback
     case external(SimulatedSetter)
-    case externalTerminal
+    case externalTerminal, externalReadback
   }
   private struct Flight: Sendable {
     let target: FrameTarget
@@ -203,6 +206,14 @@ public struct ControlModel: Sendable {
     self.maximumObservationAge = maximumObservationAge
   }
 
+  // Internal boundary-test construction; production always starts a fresh session.
+  init(environmentEpoch: UInt64, layoutRevision: UInt64, admissionGeneration: UInt64) {
+    self.init()
+    self.environmentEpoch = environmentEpoch
+    self.layoutRevision = layoutRevision
+    self.admissionGeneration = admissionGeneration
+  }
+
   public var inFlightCount: Int { flights.count }
 
   public mutating func reduce(_ event: ControlEvent, at now: Double) -> [ControlEffect] {
@@ -229,7 +240,7 @@ public struct ControlModel: Sendable {
       guard state != .stopping else { return [.rejected(.stopped)] }
       trusted = false
       state = .permissionRequired
-      environmentEpoch += 1
+      guard LifecycleCounter.advance(&environmentEpoch) else { return exhaustCounters() }
       observations.removeAll()
       desired.removeAll()
       return revoke()
@@ -309,7 +320,7 @@ public struct ControlModel: Sendable {
         state = .paused
         return revoke() + [.rejected(plan.count > maximumWindows ? .capacity : .invalidPlan)]
       }
-      layoutRevision += 1
+      guard LifecycleCounter.advance(&layoutRevision) else { return exhaustCounters() }
       desired = plan
       pending.removeAll()
       state = .active
@@ -326,7 +337,7 @@ public struct ControlModel: Sendable {
       state = .paused
       return revoke() + orderedApps().map(ControlEffect.reconcile)
     case .environmentChanged(let reason):
-      environmentEpoch += 1
+      guard LifecycleCounter.advance(&environmentEpoch) else { return exhaustCounters() }
       observations.removeAll()
       desired.removeAll()
       state = trusted ? .suspended(reason) : .permissionRequired
@@ -399,6 +410,28 @@ public struct ControlModel: Sendable {
       flight.phase = valid && result.setter == .size ? .external(.position) : .externalTerminal
       flights[result.operation.app] = flight
       return valid ? [] : invalidate(result.operation.app)
+    case .operationReadbackRequested(let id):
+      guard var flight = flights[id.app], flight.operation == id,
+        flight.phase == .externalTerminal, current(flight.target, at: now)
+      else { return [.rejected(.staleWork)] }
+      flight.phase = .externalReadback
+      flight.readbackRequestedAt = now
+      flights[id.app] = flight
+      return []
+    case .operationReadbackFinished(let id, let result):
+      guard let flight = flights[id.app], flight.operation == id,
+        flight.target == result.target, flight.phase == .externalReadback
+      else { return [.rejected(.staleWork)] }
+      flights.removeValue(forKey: id.app)
+      guard current(result.target, at: now), result.outcome == .succeeded,
+        result.startedAt == flight.firstAdmission, result.finishedAt.isFinite,
+        result.finishedAt >= result.startedAt, result.finishedAt <= now,
+        let observation = result.observation, observation.token == result.target.token,
+        let requested = flight.readbackRequestedAt, observation.sampledAt >= requested,
+        observation.sampledAt <= result.finishedAt, observation.frame == result.target.frame,
+        eligible(observation), accept(observation, at: now)
+      else { return invalidate(id.app) + [.rejected(.staleObservation)] }
+      return []
     case .completed(let result):
       let target = result.target
       guard let flight = flights[target.token.app], flight.target == target,
@@ -480,8 +513,23 @@ public struct ControlModel: Sendable {
     return true
   }
 
+  private mutating func exhaustCounters() -> [ControlEffect] {
+    state = .stopping
+    trusted = false
+    observations.removeAll()
+    desired.removeAll()
+    pending.removeAll()
+    dirty.formUnion(live)
+    // Retain actual admitted/bound work for matching terminal cleanup.
+    flights = flights.filter {
+      if case .ready = $0.value.phase { return $0.value.operation != nil }
+      return true
+    }
+    return [.admissionRevoked(admissionGeneration), .rejected(.counterExhausted)]
+  }
+
   private mutating func revoke() -> [ControlEffect] {
-    admissionGeneration += 1
+    guard LifecycleCounter.advance(&admissionGeneration) else { return exhaustCounters() }
     pending.removeAll()
     dirty.formUnion(live)
     for pid in Array(apps.keys) { apps[pid]?.invalidatedAt = clock }

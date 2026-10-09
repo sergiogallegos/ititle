@@ -4,7 +4,7 @@ Run `scripts/format` after Swift edits. Run `scripts/verify` for strict official
 
 ## Current automated coverage
 
-The latest recorded source verification passed 143 tests (101 core, 42 platform), including pure control-model, focused evidence, preview projection, registry replacement/retirement, dedicated-worker scenarios, the isolated [M2.12 command/revocation simulation](m2-command-revocation.md), and [M2.13 owner/model cleanup](m2-simulation-owner.md). Existing coverage includes nested geometry and gap conservation; invalid geometry and duplicate rejection; token retention/retirement and process generations; coordinate round trips; latency summaries; incomplete sheet evidence; dedicated worker ownership, isolation, bounded admission, stop and reuse; and fixture pipe short-message delivery/EOF. See [validation](validation.md) for the run history. No AX mutation, desktop integration, or performance claim is covered by these tests.
+The latest recorded source verification passed 195 tests (130 core, 65 platform), including pure control-model, focused evidence, preview projection, registry replacement/retirement, dedicated-worker scenarios, the isolated [M2.12 command/revocation simulation](m2-command-revocation.md), [M2.13 owner/model cleanup](m2-simulation-owner.md), [M2.14 shared simulation delivery](m2-shared-simulation-delivery.md), [M2.15 fake-worker readback](m2-fake-worker-readback.md), and [M2.16 same-app plans](m2-same-app-plans.md). Existing coverage includes nested geometry and gap conservation; invalid geometry and duplicate rejection; token retention/retirement and process generations; coordinate round trips; latency summaries; incomplete sheet evidence; dedicated worker ownership, isolation, bounded admission, stop and reuse; and fixture pipe short-message delivery/EOF. [M2.18 exhaustion checks](m2-counter-exhaustion.md) cover atomic token rejection, terminal model cleanup, and worker admission closure after snapshot exhaustion. See [validation](validation.md) for the run history. No AX mutation, desktop integration, or performance claim is covered by these tests.
 
 Five M2.3 value tests cover retained unsupported-scope requirements, exclusions alongside missing evidence, unsupported/malformed reads, invalid geometry including edge overflow, and invalid observation intervals/sequences. Valid negative origins and zero-duration intervals remain projectable. See the [eligibility decision](decisions/0003-focused-eligibility.md).
 
@@ -12,7 +12,7 @@ The focused stopped-worker test additionally verifies opt-in trace start before 
 
 ## Planned fake-platform tests
 
-[M2.1 control model and simulated admission](m2-control-model.md) now covers deterministic event interleavings. [M2.12](m2-command-revocation.md) adds isolated synchronized fake-operation admission. [M2.13](m2-simulation-owner.md) connects a manually driven simulation owner and matching model cleanup. Shared simulation delivery and real setters remain separate work; focused read-only platform revalidation is implemented in source with [partial manual acceptance and remaining race checks](m2-focused-probe.md).
+[M2.1 control model and simulated admission](m2-control-model.md) now covers deterministic event interleavings. [M2.12](m2-command-revocation.md) adds isolated synchronized fake-operation admission. [M2.13](m2-simulation-owner.md) connects a manually driven simulation owner and matching model cleanup. [M2.14](m2-shared-simulation-delivery.md) adds shared simulation delivery and priority safety ingress. [M2.15](m2-fake-worker-readback.md) adds dedicated fake workers through readback and exact terminal acknowledgment. [M2.16](m2-same-app-plans.md) adds bounded same-app sequencing through exact readback and terminal acknowledgment. [M2.17 production adapter/eligibility review](m2-production-readiness.md) is complete as a documentation/source audit; real adapter wiring and setters remain separate work; focused read-only platform revalidation is implemented in source with [partial manual acceptance and remaining race checks](m2-focused-probe.md).
 
 Record redacted events and replay them through the coordinator: create/destroy storms, stale generations, delayed writes, permission loss, PID reuse, observer failure, and app timeout. Check that destroyed windows receive no new writes, stale results cannot replace current state, pending work is bounded, and one failing app cannot stop another.
 
@@ -51,4 +51,20 @@ Bounded nested-dialog sampling has deterministic traversal and eligibility tests
 
 ## Planned delivery/admission checks
 
-The [M2.10 contract](m2-delivery-admission.md) lists required pure-state and barrier-controlled fake-backend checks for retained receipts, exact acknowledgment, bounded shared draining, overload, and safety revocation. The read-only receipt/transport subset is implemented and verified in [M2.11](m2-read-only-delivery.md); the remaining semantic command/revocation and live admission requirements are proposed. Real handler and setter acceptance remain separate.
+The [M2.10 contract](m2-delivery-admission.md) lists required pure-state and barrier-controlled fake-backend checks for retained receipts, exact acknowledgment, bounded shared draining, overload, and safety revocation. The read-only receipt/transport subset is implemented and verified in [M2.11](m2-read-only-delivery.md); semantic command/revocation and complete-plan admission are covered only by the M2.12–M2.16 simulation; their production wiring and live admission remain proposed. Real handler and setter acceptance remain separate.
+
+## Proposed provenance acceptance
+
+[M2.19](m2-evidence-provenance.md) specifies the next value-level tests for source mapping, unsupported coverage, enclosing intervals, explicit expiry boundaries, malformed/replayed/context-mismatched evidence, and unchanged unknown/ineligible projection. [M2.20](m2-evidence-values.md) implements eleven value tests covering these cases. [M2.21](m2-focused-provenance-report.md) wires historical focused report delivery and adds seven tests for scalar sequence acceptance, replacement isolation, formatting, shared revocation, and blocked preview. Rebuilt native menu delivery and measured freshness require separate acceptance. The latest 195-test source result does not establish eligibility.
+
+## Scoped native provenance acceptance
+
+[M2.22](m2-native-provenance-acceptance.md) records a rebuilt native inspection and blocked preview on two reported scale-1 displays, plus separate owned-fixture foreground-handler token/Pause/Resume/focus-loss checks. Native intermediate capture was incomplete and post-focus fixture reactivation missed its deadline. No broader recovery, app-specific eligibility, or performance acceptance is claimed. Source remains at the last 195-test verification.
+
+## Foreground recovery lab
+
+[The standalone Swift recovery lab](focus-recovery-lab.md) has an inert parser self-test included in verification and an explicit `--run` mode for packaged owned-process checks. Its focus and environment outcomes have separate acceptance scope; an incomplete capture or forced cleanup is not a pass. Native menu coverage remains separate.
+
+## Owned-fixture snapshot lab
+
+[The snapshot protocol and lab](m2-fixture-safety-snapshot.md) add five deterministic protocol tests included in `scripts/verify`. Its separately invoked owned-process run covers native tab/sheet/hide state and preservation of armed faults without AX calls. This does not validate cross-process identity or production safety coverage.

@@ -43,7 +43,9 @@ public struct ReadOnlyPreview: Sendable {
     }
   }
 
+  public var isStopped: Bool { stopped }
   public var environmentEpoch: UInt64 { model.environmentEpoch }
+  public var revocationGeneration: UInt64 { model.admissionGeneration }
   public var observationCount: Int { model.observations.count }
 
   public mutating func setTrust(_ value: Bool, at now: Double) {
@@ -139,7 +141,9 @@ public struct ReadOnlyPreview: Sendable {
     var rejection: ControlRejection?
     for effect in model.reduce(event, at: now) {
       switch effect {
-      case .rejected(let reason): rejection = reason
+      case .rejected(let reason):
+        rejection = reason
+        if reason == .counterExhausted { stopped = true }
       case .admissionRevoked, .reconcile: break
       case .prepare, .perform, .readback: failed = true
       }

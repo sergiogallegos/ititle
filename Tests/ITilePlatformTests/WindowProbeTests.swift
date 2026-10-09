@@ -6,6 +6,44 @@ import XCTest
 
 /// Exercises the production thread/mailbox/run-loop using a worker-owned fake IPC adapter.
 final class WindowProbeTests: XCTestCase {
+  func testSnapshotExhaustionDiscardsReadAndCannotReadmitAfterAcknowledgment() {
+    for focused in [false, true] {
+      let completed = expectation(description: "exhausted reply acknowledged")
+      let retired = expectation(description: "exhausted worker exits")
+      let probe = WindowProbe(
+        token: AppToken(pid: 1, generation: 1),
+        makeBackend: {
+          FakeBackend(
+            read: { _, _ in "must be discarded" }, finish: { retired.fulfill() },
+            exhaustOnSnapshot: true)
+        })
+      if focused {
+        XCTAssertTrue(
+          probe.inspectFocusedAcknowledged(environmentEpoch: 0) { result, registry, receipt in
+            guard case .failure(.counterExhausted) = result else {
+              return XCTFail("Exhaustion lost")
+            }
+            XCTAssertNil(registry)
+            XCTAssertTrue(receipt.acknowledge())
+            completed.fulfill()
+          })
+      } else {
+        XCTAssertTrue(
+          probe.inspectAcknowledged(environmentEpoch: 0) { report, registry, receipt in
+            XCTAssertEqual(report, "Lifecycle counter exhausted; inspection stopped.")
+            XCTAssertNil(registry)
+            XCTAssertTrue(receipt.acknowledge())
+            completed.fulfill()
+          })
+      }
+      wait(for: [completed], timeout: 2)
+      XCTAssertFalse(
+        probe.inspect(environmentEpoch: 1) { _ in XCTFail("Exhausted worker restarted") })
+      probe.stop()
+      wait(for: [retired], timeout: 2)
+    }
+  }
+
   func testBlockedAppDoesNotBlockOtherAppAndMailboxStaysBounded() {
     let entered = expectation(description: "slow read entered")
     let retired = expectation(description: "slow worker retired")
@@ -382,6 +420,8 @@ final class WindowProbeTests: XCTestCase {
 }
 
 private final class FakeBackend: ProbeBackend {
+  private(set) var countersExhausted = false
+  private let exhaustOnSnapshot: Bool
   private let owner = Thread.current
   private let read: (UInt64, () -> Bool) -> String
   private let finish: () -> Void
@@ -389,12 +429,14 @@ private final class FakeBackend: ProbeBackend {
 
   init(
     read: @escaping (UInt64, () -> Bool) -> String, finish: @escaping () -> Void,
-    snapshot: @escaping (UInt64) -> ProbeRegistrySnapshot? = { _ in nil }
+    snapshot: @escaping (UInt64) -> ProbeRegistrySnapshot? = { _ in nil },
+    exhaustOnSnapshot: Bool = false
   ) {
     XCTAssertFalse(Thread.isMainThread)
     self.read = read
     self.finish = finish
     self.snapshot = snapshot
+    self.exhaustOnSnapshot = exhaustOnSnapshot
   }
 
   func inspect(epoch: UInt64, cancelled: () -> Bool) -> String {
@@ -413,6 +455,7 @@ private final class FakeBackend: ProbeBackend {
   func registrySnapshot(epoch: UInt64) -> ProbeRegistrySnapshot? {
     XCTAssertFalse(Thread.isMainThread)
     XCTAssertTrue(Thread.current === owner)
+    countersExhausted = exhaustOnSnapshot
     return snapshot(epoch)
   }
 

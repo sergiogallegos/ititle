@@ -100,7 +100,7 @@ public struct FocusedWindowEvidence: Sendable {
 }
 
 public enum FocusProbeFailure: Error, Equatable, Sendable {
-  case permissionRequired, cancelled, invalidType, limit, identityChanged
+  case permissionRequired, cancelled, invalidType, limit, identityChanged, counterExhausted
   case ax(Int32)
 }
 

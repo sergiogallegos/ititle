@@ -1,4 +1,5 @@
 import AppKit
+import ITileFixtureDiagnostics
 
 @MainActor
 private func emitFixtureEvent(_ event: String) {
@@ -104,6 +105,9 @@ final class FixtureWindow: NSWindow {
 /// Deliberately stalls only this disposable process. Never sends AX calls to other apps.
 @MainActor
 final class FixtureDelegate: NSObject, NSApplicationDelegate {
+  private let safetyRun = UUID()
+  private var safetyIssuer = FixtureSnapshotIssuer()
+  private var safetyScenario = "ordinary"
   private var window: FixtureWindow?
   private var structuralNodes: [FixtureStructuralNode] = []
   private var sheet: NSWindow?
@@ -137,9 +141,21 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
         name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
     }
     emit("ready")
+    if CommandLine.arguments.contains("--safety-probe") {
+      emit("safety-ready schema=1 run=\(safetyRun.uuidString)")
+    }
     // Only this process's parent owns stdin. EOF exits; no listener or network service.
     Thread.detachNewThread { [weak self] in
       while let command = readLine() {
+        if CommandLine.arguments.contains("--safety-probe"), command.utf8.count <= 64 {
+          let parts = command.split(separator: " ", omittingEmptySubsequences: false)
+          if parts.count == 2, parts[0] == "safety-snapshot", let request = UInt64(parts[1]),
+            request > 0, String(request) == parts[1]
+          {
+            DispatchQueue.main.async { [weak self] in self?.emitSafetySnapshot(request: request) }
+            continue
+          }
+        }
         guard
           [
             "stall", "quit", "arm-focus-loss", "arm-window-stall", "activate",
@@ -149,6 +165,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
             "tree-native-sheet-open",
             "native-sheet", "close-sheet", "tree-tab-group", "tree-tab-group-cycle",
             "native-tabs-open", "native-tabs-first", "native-tabs-second", "native-tabs-close",
+            "native-tabs-show-bar", "native-tabs-hide-bar",
             "visibility-peer-open", "visibility-peer-close", "visibility-hide", "desktop-status",
           ].contains(command)
         else { continue }
@@ -308,6 +325,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
       default: break
       }
     }
+    safetyScenario = command
     state.stringValue = "Nested probe scenario: \(command)"
     emitFixtureEvent(command + "-ready")
   }
@@ -397,6 +415,10 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
       guard let secondTab else { break }
       window.tabGroup?.selectedWindow = secondTab
       secondTab.makeKeyAndOrderFront(nil)
+    case "native-tabs-show-bar", "native-tabs-hide-bar":
+      if let group = window.tabGroup, group.isTabBarVisible != (command == "native-tabs-show-bar") {
+        window.toggleTabBar(nil)
+      }
     case "native-tabs-close":
       secondTab?.close()
       secondTab = nil
@@ -420,6 +442,54 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
     sheet.contentView?.addSubview(label)
     self.sheet = sheet
     window.beginSheet(sheet)
+  }
+
+  /// Own AppKit state only. Never call the armed accessibility accessors here.
+  private func emitSafetySnapshot(request: UInt64) {
+    let started = ProcessInfo.processInfo.systemUptime
+    do {
+      let sequence = try safetyIssuer.issue(request: request)
+      guard let window, let app = NSApp as? FixtureApplication else {
+        emit("safety-unavailable")
+        return
+      }
+      func flag(_ value: Bool) -> String { value ? "true" : "false" }
+      let group = window.tabGroup
+      let tabs = group?.windows.count ?? (secondTab == nil ? 1 : 65)
+      let sheets = window.sheets.count
+      let structuralFault = structuralNodes.contains {
+        $0.fault.childDelay > 0 || $0.fault.hideOnChildrenRead || $0.fault.stallOnChildrenRead
+          || $0.fault.transitionOnChildrenRead != nil
+      }
+      var fields: [String: String] = [
+        "schema": "1", "coverage": "ownedFixtureOnly", "run": safetyRun.uuidString,
+        "request": String(request), "sequence": String(sequence), "start": String(started),
+        "original": "1",
+        "number": window.windowNumber > 0 ? String(window.windowNumber) : "unavailable",
+        "active": flag(window.isOnActiveSpace), "visible": flag(window.isVisible),
+        "minimized": flag(window.isMiniaturized),
+        "fullscreen": flag(window.styleMask.contains(.fullScreen)),
+        "hidden": flag(app.isHidden),
+        "frontmost": flag(
+          NSWorkspace.shared.frontmostApplication?.processIdentifier
+            == ProcessInfo.processInfo.processIdentifier),
+        "key": flag(app.keyWindow === window), "main": flag(app.mainWindow === window),
+        "tabCount": tabs <= 64 ? String(tabs) : "unavailable",
+        "tabSelected": group.map { flag($0.selectedWindow === window) } ?? "notApplicable",
+        "tabBar": group.map { flag($0.isTabBarVisible) } ?? "notApplicable",
+        "sheetCount": sheets <= 64 ? String(sheets) : "unavailable",
+        "attached": flag(window.attachedSheet != nil), "modal": flag(app.modalWindow != nil),
+        "synthetic": flag(window.structuralChildren != nil), "scenario": safetyScenario,
+        "focusedFault": flag(app.hideOnFocusedRead), "windowFault": flag(window.stallOnRoleRead),
+        "structuralFault": flag(structuralFault),
+      ]
+      fields["end"] = String(ProcessInfo.processInfo.systemUptime)
+      let snapshot = try FixtureSafetySnapshot(fields: fields)
+      // Unlike fixture events, the versioned record has no trailing event timestamp.
+      FileHandle.standardOutput.write(Data((snapshot.line + "\n").utf8))
+    } catch {
+      emit("safety-rejected")
+    }
   }
 
   private func stall() {

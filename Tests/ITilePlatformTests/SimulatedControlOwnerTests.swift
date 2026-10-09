@@ -221,6 +221,37 @@ final class SimulatedControlOwnerTests: XCTestCase {
     }
   }
 
+  func testReadbackSampleMustFollowItsPermitNotJustPositionAcknowledgment() throws {
+    let owner = SimulatedControlOwner(requiresReadback: true)
+    XCTAssertTrue(owner.attach(app, at: 0))
+    owner.trust(true, at: 0)
+    _ = owner.gate.enqueue(.enable)
+    _ = owner.drain(at: 0)
+    XCTAssertEqual(owner.observe(sample(token), at: 1), [])
+    let id = try prepare(owner)
+    XCTAssertEqual(owner.consume(try step(owner, id: id, setter: .size), at: 1), .positionReady)
+    XCTAssertEqual(owner.consume(try step(owner, id: id, setter: .position), at: 1), .readbackReady)
+    guard case .permit(let permit) = owner.gate.admitReadback(id, at: 1.2) else {
+      return XCTFail("Missing readback permit")
+    }
+    XCTAssertEqual(owner.gate.admitReadback(id, at: 1.2), .stale)
+    let earlier = WindowObservation(
+      token: token, frame: destination, eligibility: .eligible,
+      positionSettable: .supported, sizeSettable: .supported, environmentEpoch: 0,
+      workerSequence: 2, sampledAt: 1.1)
+    let receipt = try XCTUnwrap(
+      owner.gate.finishReadback(
+        permit, observation: earlier,
+        outcome: .succeeded, at: 1.3))
+    let terminal = try XCTUnwrap(owner.consume(receipt, at: 1.3))
+    XCTAssertEqual(terminal.reason, .revoked)
+    XCTAssertEqual(owner.model.observations[token]?.frame, sample(token).frame)
+    XCTAssertTrue(owner.model.dirty.contains(token))
+    XCTAssertEqual(owner.model.inFlightCount, 0)
+    XCTAssertEqual(owner.gate.operationCount, 0)
+    XCTAssertNil(owner.consume(receipt, at: 1.3))
+  }
+
   func testUnsupportedSemanticPoliciesAndSameAppMultiWindowPlanAreExplicit() {
     let owner = ready()
     _ = owner.gate.enqueue(.focus(token))

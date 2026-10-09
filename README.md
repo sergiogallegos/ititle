@@ -2,7 +2,7 @@
 
 A minimal, keyboard-driven tiling companion for macOS. Built from scratch in Swift with zero third-party dependencies.
 
-**Status: M1 read-only probe implemented with partial manual validation; real window mutation remains gated. This is not yet a working window manager.** See the [readiness review and next task](docs/m1-readiness.md). The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
+**Status: M1 read-only probe implemented with partial manual validation; real window mutation remains gated. This is not yet a working window manager.** See the [fixture snapshots and next task](docs/m2-fixture-safety-snapshot.md), [production boundary review](docs/m2-production-readiness.md) and [M1 readiness](docs/m1-readiness.md). The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
 
 The goal is a small tool that arranges ordinary windows predictably, responds quickly to commands, and yields gracefully when macOS or an application cannot cooperate. One menu-bar app, public APIs, SIP enabled, no external services.
 
@@ -15,6 +15,7 @@ The goal is a small tool that arranges ordinary windows predictably, responds qu
 - Acknowledged read-only replies through a shared bounded owner drain; workers remain occupied until consumption.
 - Bounded tracked-window registry synchronization on explicit replies, with stale/retired-token rejection and record retirement.
 - A menu-bar read-only probe with explicit per-application inspection, permission onboarding, pause, and Quit.
+- Historical focused-report provenance with fixed source/coverage/interval metadata and unmeasured freshness; scoped native inspection/blocked-preview acceptance is recorded; recovery coverage remains partial.
 - Explicit focused-window inspection and historical-token revalidation, with scoped focus-loss, mid-request permission-loss, desktop invalidation, and physical display hotplug checks. Eligibility remains unknown or ineligible.
 - A pure focused eligibility assessment with explicit exclusion/missing-evidence reasons and validation before projecting control records. No eligible production scope is enabled.
 - Focused on-screen bounds candidate diagnostics with explicit ambiguity/incomplete outcomes; they do not prove current-desktop visibility.
@@ -51,6 +52,8 @@ Tests/ITileCoreTests/    Geometry, identity, and coordinate tests
 Tests/ITilePlatformTests/ Worker lifecycle and fault-isolation tests
 Resources/              App bundle metadata
 config/                 Proposed configuration
+Sources/ITileFixtureDiagnostics/ Laboratory-only snapshot protocol
+Sources/ITileSafetySnapshotLab/ Owned-process snapshot acceptance
 scripts/                Verify and package locally
 docs/                   Product, architecture, decisions, and research
 ```
@@ -75,6 +78,19 @@ docs/                   Product, architecture, decisions, and research
 - [M2.11 acknowledged read-only reply transport](docs/m2-read-only-delivery.md)
 - [M2.12 semantic commands and simulated revocation](docs/m2-command-revocation.md)
 - [M2.13 simulation owner and matching model cleanup](docs/m2-simulation-owner.md)
+- [M2.14 bounded shared simulation delivery](docs/m2-shared-simulation-delivery.md)
+- [M2.15 fake workers through readback](docs/m2-fake-worker-readback.md)
+- [M2.16 bounded same-app plan sequencing](docs/m2-same-app-plans.md)
+- [M2.17 production boundary review and remaining gates](docs/m2-production-readiness.md)
+- [M2.18 lifecycle counter exhaustion](docs/m2-counter-exhaustion.md)
+- [M2.19 evidence provenance and expiry contract](docs/m2-evidence-provenance.md)
+- [M2.20 pure diagnostic evidence values](docs/m2-evidence-values.md)
+- [M2.21 historical focused provenance reports](docs/m2-focused-provenance-report.md)
+- [M2.22 scoped native provenance acceptance and limits](docs/m2-native-provenance-acceptance.md)
+- [M2.23 bounded fixture focus recovery](docs/m2-focus-recovery.md)
+- [M2.24 reproducible foreground recovery lab](docs/focus-recovery-lab.md)
+- [M2.25 safety-provider feasibility review](docs/m2-provider-feasibility.md)
+- [M2.26 owned-fixture safety snapshots](docs/m2-fixture-safety-snapshot.md)
 - [Read-only probe usage and manual checks](docs/m1-probe.md)
 - [M1 readiness and M2.1 acceptance criteria](docs/m1-readiness.md)
 - [P3 delay/timeout lab](docs/p3-lab.md)

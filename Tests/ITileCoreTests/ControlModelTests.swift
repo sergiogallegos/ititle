@@ -546,4 +546,75 @@ final class ControlModelTests: XCTestCase {
     XCTAssertTrue(model.admissionTargets(at: 1).isEmpty)
   }
 
+  private func externalReadback(_ model: inout ControlModel) throws -> (
+    FrameTarget, ControlOperationID
+  ) {
+    _ = model.reduce(.tile([token(a): destination]), at: 1)
+    let target = try dispatch(&model, app: a)
+    let id = ControlOperationID(app: a, serial: 1)
+    XCTAssertEqual(model.reduce(.operationBound(target, id), at: 1), [])
+    for setter in [SimulatedSetter.size, .position] {
+      XCTAssertEqual(
+        model.reduce(
+          .operationStepFinished(
+            OperationStepResult(
+              operation: id,
+              setter: setter, admittedAt: 1, finishedAt: 1, outcome: .succeeded)), at: 1), [])
+    }
+    XCTAssertEqual(model.observations[token(a)]?.frame, original)
+    XCTAssertEqual(model.reduce(.operationReadbackRequested(id), at: 1), [])
+    return (target, id)
+  }
+
+  func testExternalReadbackAcceptsOnlyMatchingFlightAndReplayCannotDirtySuccess() throws {
+    var model = ready()
+    let (target, id) = try externalReadback(&model)
+    let result = ApplyResult(
+      target: target,
+      observation: sample(
+        token(a), sequence: 2,
+        frame: destination), startedAt: 1, finishedAt: 1, outcome: .succeeded)
+    XCTAssertEqual(
+      model.reduce(
+        .operationReadbackFinished(
+          ControlOperationID(app: a, serial: 2),
+          result), at: 1), [.rejected(.staleWork)])
+    XCTAssertEqual(model.inFlightCount, 1)
+    XCTAssertEqual(model.reduce(.operationReadbackFinished(id, result), at: 1), [])
+    XCTAssertEqual(model.inFlightCount, 0)
+    XCTAssertEqual(model.observations[token(a)]?.frame, destination)
+    XCTAssertFalse(model.dirty.contains(token(a)))
+    XCTAssertEqual(
+      model.reduce(.operationReadbackFinished(id, result), at: 1), [.rejected(.staleWork)])
+    XCTAssertEqual(model.reduce(.operationTerminated(id), at: 1), [.rejected(.staleWork)])
+    XCTAssertFalse(model.dirty.contains(token(a)))
+  }
+
+  func testExternalReadbackCannotRollBackNewRevisionOrReleaseNewOperation() throws {
+    var model = ready()
+    let (target, id) = try externalReadback(&model)
+    let newer = Rect(x: 800, y: 30, width: 800, height: 600)
+    _ = model.reduce(.tile([token(a): newer]), at: 1)
+    let old = ApplyResult(
+      target: target,
+      observation: sample(
+        token(a), sequence: 2,
+        frame: destination), startedAt: 1, finishedAt: 1, outcome: .succeeded)
+    XCTAssertTrue(
+      model.reduce(.operationReadbackFinished(id, old), at: 1).contains(
+        .rejected(.staleObservation)))
+    XCTAssertEqual(model.desired[token(a)], newer)
+    XCTAssertEqual(model.observations[token(a)]?.frame, original)
+    XCTAssertTrue(model.dirty.contains(token(a)))
+    _ = model.reduce(.observation(sample(token(a), sequence: 3)), at: 1)
+    _ = model.reduce(.tile([token(a): newer]), at: 1)
+    let fresh = try dispatch(&model, app: a)
+    XCTAssertEqual(
+      model.reduce(.operationBound(fresh, ControlOperationID(app: a, serial: 2)), at: 1), [])
+    XCTAssertEqual(
+      model.reduce(.operationReadbackFinished(id, old), at: 1), [.rejected(.staleWork)])
+    XCTAssertEqual(model.inFlightCount, 1)
+    XCTAssertEqual(model.desired[token(a)], newer)
+  }
+
 }

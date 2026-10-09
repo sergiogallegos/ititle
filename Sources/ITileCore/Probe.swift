@@ -19,14 +19,25 @@ public struct ProbeRegistry: Sendable {
   public let app: AppToken
   private var nextSerial: UInt64 = 0
   private var tokens: [Int: WindowToken] = [:]
-  public init(app: AppToken) { self.app = app }
+  public private(set) var exhausted = false
+  public init(app: AppToken, initialSerial: UInt64 = 0) {
+    self.app = app
+    nextSerial = initialSerial
+  }
 
   public mutating func reconcile(_ identities: [Int]) -> [WindowToken] {
+    guard !exhausted else { return [] }
     let live = Set(identities)
+    let newCount = live.filter { tokens[$0] == nil }.count
+    guard UInt64(newCount) <= UInt64.max - nextSerial else {
+      exhausted = true
+      tokens.removeAll()
+      return []
+    }
     tokens = tokens.filter { live.contains($0.key) }
     return identities.map { identity in
       if let existing = tokens[identity] { return existing }
-      nextSerial += 1
+      LifecycleCounter.advance(&nextSerial)
       let token = WindowToken(app: app, serial: nextSerial)
       tokens[identity] = token
       return token

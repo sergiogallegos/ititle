@@ -134,6 +134,13 @@ public struct CommandBoundary: Sendable {
       && stamp.apps.allSatisfy { apps[$0.key] == $0.value }
   }
 
+  /// After an atomic command reduction, per-app execution can be invalidated
+  /// independently. Commands themselves still validate every affected app.
+  public func accepts(_ stamp: CommandStamp, for app: AppToken) -> Bool {
+    !stopped && stamp.global == generation && stamp.apps[app] != nil
+      && apps[app] == stamp.apps[app]
+  }
+
   public mutating func enqueue(_ command: SemanticCommand) -> CommandEnqueueResult {
     guard !stopped else { return .rejected(.stopped) }
     if case .tile(let frames) = command, frames.isEmpty || frames.count > 256 {
@@ -208,6 +215,15 @@ public struct CommandBoundary: Sendable {
   /// This does not prove eligibility, register windows, or dispatch effects.
   public mutating func activate(_ ticket: CommandTicket) -> Bool {
     guard enabled, trusted, accepts(ticket.stamp), case .tile = ticket.command else { return false }
+    paused = false
+    return true
+  }
+
+  /// Execution activation for an already reduced Tile plan's healthy app.
+  public mutating func activate(_ ticket: CommandTicket, for app: AppToken) -> Bool {
+    guard enabled, trusted, accepts(ticket.stamp, for: app),
+      case .tile(let frames) = ticket.command, frames.keys.contains(where: { $0.app == app })
+    else { return false }
     paused = false
     return true
   }

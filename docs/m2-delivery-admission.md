@@ -106,3 +106,9 @@ A later fake setter stage must additionally force both admission/revocation lock
 [M2.12](m2-command-revocation.md) now implements the isolated command FIFO and synchronized fake-operation subset. Owner/model registry/revision integration, shared semantic wakeup delivery, and live setters remain unimplemented; its terminal denial acknowledgment does not yet release a separate reducer slot.
 
 [M2.13](m2-simulation-owner.md) adds the manually driven simulation owner, registry/revision authorization mirror, reserved step consumption, and exact operation terminal cleanup. The operation-ID reducer event now exists for that subset. Shared command/reply delivery, priority ingress, real readback, and live writer wiring remain separate gates.
+
+[M2.14](m2-shared-simulation-delivery.md) subsequently implements the shared command/reply drain and coalesced priority safety ingress in simulation, including exact pre-acknowledgment transport release, quarantine, and retained retired routes. Fake-worker/readback orchestration and all production control integration remain gated.
+
+[M2.15](m2-fake-worker-readback.md) adds dedicated fake workers, exact readback permits/receipts, and observed model completion through terminal acknowledgment. Same-app multi-window sequencing and every production eligibility/control integration remain separate gates.
+
+[M2.16](m2-same-app-plans.md) adds bounded same-app plan cursors in simulation. Atomic complete-command reduction still checks all affected stamps; later execution checks the individual app stamp to isolate healthy peers. Cursor continuation requires exact observed readback and terminal acknowledgment, and retired duplicate routing cannot invalidate replacement work. No production control gate is closed by this simulation acceptance.
