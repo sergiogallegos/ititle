@@ -82,6 +82,34 @@ public enum ControlRejection: Equatable, Sendable {
   case invalidTime, permission, stopped, capacity, invalidPlan, staleObservation, staleWork
 }
 
+/// Identity of an externally admitted simulation sequence, scoped to process lifetime.
+public struct ControlOperationID: Equatable, Hashable, Sendable {
+  public let app: AppToken
+  public let serial: UInt64
+  public init(app: AppToken, serial: UInt64) {
+    self.app = app
+    self.serial = serial
+  }
+}
+
+public struct OperationStepResult: Equatable, Sendable {
+  public let operation: ControlOperationID
+  public let setter: SimulatedSetter
+  public let admittedAt: Double
+  public let finishedAt: Double
+  public let outcome: ControlOutcome
+  public init(
+    operation: ControlOperationID, setter: SimulatedSetter, admittedAt: Double,
+    finishedAt: Double, outcome: ControlOutcome
+  ) {
+    self.operation = operation
+    self.setter = setter
+    self.admittedAt = admittedAt
+    self.finishedAt = finishedAt
+    self.outcome = outcome
+  }
+}
+
 public enum ControlEvent: Sendable {
   case permission(Bool)
   /// Tokens must come from one monotonically increasing process-generation issuer.
@@ -99,6 +127,13 @@ public enum ControlEvent: Sendable {
   case admit(FrameTarget, SimulatedSetter)
   case setterFinished(SetterPermit, ControlOutcome)
   case completed(ApplyResult)
+  /// Bind only after publication, before exposing the operation to a fake worker.
+  case operationBound(FrameTarget, ControlOperationID)
+  case preparationDiscarded(FrameTarget)
+  /// Actual gate receipt; never creates a setter permit or starts work.
+  case operationStepFinished(OperationStepResult)
+  /// Actual terminal denial/completion, consumed before acknowledging the gate slot.
+  case operationTerminated(ControlOperationID)
 }
 
 public enum ControlEffect: Equatable, Sendable {
@@ -127,10 +162,13 @@ public struct ControlModel: Sendable {
     case ready(SimulatedSetter)
     case executing(SetterPermit)
     case readback
+    case external(SimulatedSetter)
+    case externalTerminal
   }
   private struct Flight: Sendable {
     let target: FrameTarget
     var phase: Phase
+    var operation: ControlOperationID?
     var firstAdmission: Double?
     var readbackRequestedAt: Double?
   }
@@ -141,6 +179,7 @@ public struct ControlModel: Sendable {
     var sequence: UInt64 = 0
     var invalidatedAt: Double = 0
     var lastSampleTime: Double = 0
+    var highestOperation: UInt64 = 0
   }
   private var apps: [Int32: Attachment] = [:]
   private var live: Set<WindowToken> = []
@@ -171,6 +210,13 @@ public struct ControlModel: Sendable {
     let validTime = now.isFinite && now >= clock
     if validTime { clock = now }
     switch event {
+    case .operationTerminated(let id):
+      guard let flight = flights[id.app], flight.operation == id else {
+        return [.rejected(.staleWork)]
+      }
+      flights.removeValue(forKey: id.app)
+      // Even successful fake steps do not establish observed geometry.
+      return invalidate(id.app)
     case .quit:
       guard state != .stopping else { return [] }
       state = .stopping
@@ -324,6 +370,35 @@ public struct ControlModel: Sendable {
       if permit.setter == .position { flight.readbackRequestedAt = now }
       flights[target.token.app] = flight
       return permit.setter == .position ? [.readback(target)] : []
+    case .preparationDiscarded(let target):
+      guard let flight = flights[target.token.app], flight.target == target,
+        flight.phase == .ready(.size), flight.operation == nil
+      else { return [.rejected(.staleWork)] }
+      flights.removeValue(forKey: target.token.app)
+      return invalidate(target.token.app)
+    case .operationBound(let target, let id):
+      guard var flight = flights[id.app], flight.target == target,
+        flight.phase == .ready(.size), flight.operation == nil,
+        id.app == target.token.app, id.serial > (apps[id.app.pid]?.highestOperation ?? 0),
+        current(target, at: now)
+      else { return [.rejected(.staleWork)] }
+      flight.operation = id
+      flight.phase = .external(.size)
+      flights[id.app] = flight
+      apps[id.app.pid]?.highestOperation = id.serial
+      return []
+    case .operationStepFinished(let result):
+      guard var flight = flights[result.operation.app], flight.operation == result.operation,
+        flight.phase == .external(result.setter), result.admittedAt.isFinite,
+        result.finishedAt.isFinite, result.admittedAt >= flight.target.plannedAt,
+        result.finishedAt >= result.admittedAt, result.finishedAt <= now,
+        result.admittedAt >= (flight.firstAdmission ?? result.admittedAt)
+      else { return [.rejected(.staleWork)] }
+      if flight.firstAdmission == nil { flight.firstAdmission = result.admittedAt }
+      let valid = result.outcome == .succeeded && current(flight.target, at: now)
+      flight.phase = valid && result.setter == .size ? .external(.position) : .externalTerminal
+      flights[result.operation.app] = flight
+      return valid ? [] : invalidate(result.operation.app)
     case .completed(let result):
       let target = result.target
       guard let flight = flights[target.token.app], flight.target == target,
@@ -344,8 +419,16 @@ public struct ControlModel: Sendable {
         return invalidate(target.token.app)
       }
       return []
-    case .quit, .pause, .permission(false):
+    case .quit, .pause, .permission(false), .operationTerminated:
       return []  // Handled before timestamp validation.
+    }
+  }
+
+  /// Value snapshot for the simulation gate. No worker calls the reducer under a lock.
+  public func admissionTargets(at now: Double) -> [AppToken: FrameTarget] {
+    guard now.isFinite, now >= clock else { return [:] }
+    return flights.compactMapValues { flight in
+      return current(flight.target, at: now) ? flight.target : nil
     }
   }
 
@@ -405,7 +488,7 @@ public struct ControlModel: Sendable {
     // Prepared (not admitted) work can be discarded; executing/readback work owns
     // its slot until acknowledgement, preventing replacement of stuck workers.
     flights = flights.filter {
-      if case .ready = $0.value.phase { return false }
+      if case .ready = $0.value.phase { return $0.value.operation != nil }
       return true
     }
     return [.admissionRevoked(admissionGeneration)]

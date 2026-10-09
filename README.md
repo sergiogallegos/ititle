@@ -73,6 +73,8 @@ docs/                   Product, architecture, decisions, and research
 - [M2.9 bounded registry/lifecycle protocol](docs/m2-registry-lifecycle.md)
 - [M2.10 reply-delivery and admission contract](docs/m2-delivery-admission.md)
 - [M2.11 acknowledged read-only reply transport](docs/m2-read-only-delivery.md)
+- [M2.12 semantic commands and simulated revocation](docs/m2-command-revocation.md)
+- [M2.13 simulation owner and matching model cleanup](docs/m2-simulation-owner.md)
 - [Read-only probe usage and manual checks](docs/m1-probe.md)
 - [M1 readiness and M2.1 acceptance criteria](docs/m1-readiness.md)
 - [P3 delay/timeout lab](docs/p3-lab.md)

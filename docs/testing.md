@@ -4,7 +4,7 @@ Run `scripts/format` after Swift edits. Run `scripts/verify` for strict official
 
 ## Current automated coverage
 
-The latest recorded source verification passed 116 tests (91 core, 25 platform), including pure control-model, focused evidence, preview projection, registry replacement/retirement, and dedicated-worker scenarios. Existing coverage includes nested geometry and gap conservation; invalid geometry and duplicate rejection; token retention/retirement and process generations; coordinate round trips; latency summaries; incomplete sheet evidence; dedicated worker ownership, isolation, bounded admission, stop and reuse; and fixture pipe short-message delivery/EOF. See [validation](validation.md) for the run history. No AX mutation, desktop integration, or performance claim is covered by these tests.
+The latest recorded source verification passed 143 tests (101 core, 42 platform), including pure control-model, focused evidence, preview projection, registry replacement/retirement, dedicated-worker scenarios, the isolated [M2.12 command/revocation simulation](m2-command-revocation.md), and [M2.13 owner/model cleanup](m2-simulation-owner.md). Existing coverage includes nested geometry and gap conservation; invalid geometry and duplicate rejection; token retention/retirement and process generations; coordinate round trips; latency summaries; incomplete sheet evidence; dedicated worker ownership, isolation, bounded admission, stop and reuse; and fixture pipe short-message delivery/EOF. See [validation](validation.md) for the run history. No AX mutation, desktop integration, or performance claim is covered by these tests.
 
 Five M2.3 value tests cover retained unsupported-scope requirements, exclusions alongside missing evidence, unsupported/malformed reads, invalid geometry including edge overflow, and invalid observation intervals/sequences. Valid negative origins and zero-duration intervals remain projectable. See the [eligibility decision](decisions/0003-focused-eligibility.md).
 
@@ -12,7 +12,7 @@ The focused stopped-worker test additionally verifies opt-in trace start before 
 
 ## Planned fake-platform tests
 
-[M2.1 control model and simulated admission](m2-control-model.md) now covers deterministic event interleavings. Actor integration, synchronized worker admission, and real setters remain separate work; focused read-only platform revalidation is implemented in source with [partial manual acceptance and remaining race checks](m2-focused-probe.md).
+[M2.1 control model and simulated admission](m2-control-model.md) now covers deterministic event interleavings. [M2.12](m2-command-revocation.md) adds isolated synchronized fake-operation admission. [M2.13](m2-simulation-owner.md) connects a manually driven simulation owner and matching model cleanup. Shared simulation delivery and real setters remain separate work; focused read-only platform revalidation is implemented in source with [partial manual acceptance and remaining race checks](m2-focused-probe.md).
 
 Record redacted events and replay them through the coordinator: create/destroy storms, stale generations, delayed writes, permission loss, PID reuse, observer failure, and app timeout. Check that destroyed windows receive no new writes, stale results cannot replace current state, pending work is bounded, and one failing app cannot stop another.
 

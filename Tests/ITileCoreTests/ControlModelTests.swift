@@ -474,4 +474,76 @@ final class ControlModelTests: XCTestCase {
     XCTAssertEqual(model.reduce(.admit(target, .position), at: 1), [.rejected(.staleWork)])
   }
 
+  func testExternallyBoundDenialUsesExactOperationAndSurvivesPauseUntilTerminal() throws {
+    var model = ready()
+    _ = model.reduce(.tile([token(a): destination]), at: 1)
+    let target = try dispatch(&model, app: a)
+    let id = ControlOperationID(app: a, serial: 1)
+    XCTAssertEqual(model.reduce(.operationBound(target, id), at: 1), [])
+    XCTAssertEqual(model.reduce(.admit(target, .size), at: 1), [.rejected(.staleWork)])
+    _ = model.reduce(.pause, at: 1)
+    XCTAssertEqual(model.inFlightCount, 1)
+    XCTAssertEqual(
+      model.reduce(.operationTerminated(ControlOperationID(app: a, serial: 2)), at: 1),
+      [.rejected(.staleWork)])
+    XCTAssertEqual(model.inFlightCount, 1)
+    XCTAssertEqual(model.reduce(.operationTerminated(id), at: .nan), [.reconcile(a)])
+    XCTAssertEqual(model.inFlightCount, 0)
+    XCTAssertEqual(model.observations[token(a)]?.frame, original)
+    XCTAssertTrue(model.dirty.contains(token(a)))
+    XCTAssertEqual(model.reduce(.operationTerminated(id), at: 1), [.rejected(.staleWork)])
+  }
+
+  func testExternalStepsRejectWrongIdentityOrderTimingAndReplay() throws {
+    var model = ready()
+    _ = model.reduce(.tile([token(a): destination]), at: 1)
+    let target = try dispatch(&model, app: a)
+    let id = ControlOperationID(app: a, serial: 1)
+    _ = model.reduce(.operationBound(target, id), at: 1)
+    for result in [
+      OperationStepResult(
+        operation: ControlOperationID(app: a, serial: 2), setter: .size,
+        admittedAt: 1, finishedAt: 1, outcome: .succeeded),
+      OperationStepResult(
+        operation: id, setter: .position, admittedAt: 1, finishedAt: 1,
+        outcome: .succeeded),
+      OperationStepResult(
+        operation: id, setter: .size, admittedAt: 0.9, finishedAt: 1,
+        outcome: .succeeded),
+      OperationStepResult(
+        operation: id, setter: .size, admittedAt: 1, finishedAt: 1.1,
+        outcome: .succeeded),
+    ] {
+      XCTAssertEqual(model.reduce(.operationStepFinished(result), at: 1), [.rejected(.staleWork)])
+    }
+    let size = OperationStepResult(
+      operation: id, setter: .size, admittedAt: 1, finishedAt: 1,
+      outcome: .succeeded)
+    XCTAssertEqual(model.reduce(.operationStepFinished(size), at: 1), [])
+    XCTAssertEqual(model.reduce(.operationStepFinished(size), at: 1), [.rejected(.staleWork)])
+    XCTAssertEqual(model.inFlightCount, 1)
+    _ = model.reduce(.operationTerminated(id), at: 1)
+    _ = model.reduce(.observation(sample(token(a), sequence: 2)), at: 1)
+    _ = model.reduce(.tile([token(a): destination]), at: 1)
+    let newer = try dispatch(&model, app: a)
+    XCTAssertEqual(model.reduce(.operationBound(newer, id), at: 1), [.rejected(.staleWork)])
+    XCTAssertEqual(model.reduce(.preparationDiscarded(target), at: 1), [.rejected(.staleWork)])
+    XCTAssertEqual(model.reduce(.preparationDiscarded(newer), at: 1), [.reconcile(a)])
+    XCTAssertEqual(model.inFlightCount, 0)
+  }
+
+  func testExternalTerminalAfterQuitReleasesSlotWithoutRestartingControl() throws {
+    var model = ready()
+    _ = model.reduce(.tile([token(a): destination]), at: 1)
+    let target = try dispatch(&model, app: a)
+    let id = ControlOperationID(app: a, serial: 1)
+    _ = model.reduce(.operationBound(target, id), at: 1)
+    _ = model.reduce(.quit, at: .nan)
+    XCTAssertEqual(model.inFlightCount, 1)
+    _ = model.reduce(.operationTerminated(id), at: .nan)
+    XCTAssertEqual(model.inFlightCount, 0)
+    XCTAssertEqual(model.state, .stopping)
+    XCTAssertTrue(model.admissionTargets(at: 1).isEmpty)
+  }
+
 }

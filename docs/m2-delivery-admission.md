@@ -102,3 +102,7 @@ Required deterministic and barrier-controlled scenarios:
 - Reject oversized payloads, incomplete registry replacements, invalid timing, malformed IDs, and exhausted counters without partial control state or wrapped identity reuse.
 
 A later fake setter stage must additionally force both admission/revocation lock orders, denial before any permit, revocation between setters, acknowledgment after unknown outcomes, and retirement while a call is executing. Then real read-only handler acceptance must check the changed completion lifecycle separately. Physical AX setters, mouse interaction, lock/wake, display/Space behavior, and representative-app eligibility require explicit separate acceptance. See M2.11 for the latest source verification and the exact subset accepted; no test count establishes the remaining live admission contract.
+
+[M2.12](m2-command-revocation.md) now implements the isolated command FIFO and synchronized fake-operation subset. Owner/model registry/revision integration, shared semantic wakeup delivery, and live setters remain unimplemented; its terminal denial acknowledgment does not yet release a separate reducer slot.
+
+[M2.13](m2-simulation-owner.md) adds the manually driven simulation owner, registry/revision authorization mirror, reserved step consumption, and exact operation terminal cleanup. The operation-ID reducer event now exists for that subset. Shared command/reply delivery, priority ingress, real readback, and live writer wiring remain separate gates.
