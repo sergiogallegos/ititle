@@ -2,7 +2,7 @@
 
 A minimal, keyboard-driven tiling companion for macOS. Built from scratch in Swift with zero third-party dependencies.
 
-**Status: M1 read-only probe implemented with partial manual validation; real window mutation remains gated. This is not yet a working window manager.** See the [fixture snapshots and next task](docs/m2-fixture-safety-snapshot.md), [production boundary review](docs/m2-production-readiness.md) and [M1 readiness](docs/m1-readiness.md). The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
+**Status: M1 read-only probe implemented with partial manual validation; real window mutation remains gated. This is not yet a working window manager.** See the [fixture timing collector and next task](docs/m2-fixture-timing-collector.md), [production boundary review](docs/m2-production-readiness.md) and [M1 readiness](docs/m1-readiness.md). The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
 
 The goal is a small tool that arranges ordinary windows predictably, responds quickly to commands, and yields gracefully when macOS or an application cannot cooperate. One menu-bar app, public APIs, SIP enabled, no external services.
 
@@ -15,6 +15,7 @@ The goal is a small tool that arranges ordinary windows predictably, responds qu
 - Acknowledged read-only replies through a shared bounded owner drain; workers remain occupied until consumption.
 - Bounded tracked-window registry synchronization on explicit replies, with stale/retired-token rejection and record retirement.
 - A menu-bar read-only probe with explicit per-application inspection, permission onboarding, pause, and Quit.
+- Separate laboratory-only schema-2 lifecycle snapshots and read-only pair assessment, with scoped tab/sheet reversal rejection, host event invalidation/recovery, scoped native desktop/permission acceptance and unmeasured freshness.
 - Historical focused-report provenance with fixed source/coverage/interval metadata and unmeasured freshness; scoped native inspection/blocked-preview acceptance is recorded; recovery coverage remains partial.
 - Explicit focused-window inspection and historical-token revalidation, with scoped focus-loss, mid-request permission-loss, desktop invalidation, and physical display hotplug checks. Eligibility remains unknown or ineligible.
 - A pure focused eligibility assessment with explicit exclusion/missing-evidence reasons and validation before projecting control records. No eligible production scope is enabled.
@@ -91,6 +92,13 @@ docs/                   Product, architecture, decisions, and research
 - [M2.24 reproducible foreground recovery lab](docs/focus-recovery-lab.md)
 - [M2.25 safety-provider feasibility review](docs/m2-provider-feasibility.md)
 - [M2.26 owned-fixture safety snapshots](docs/m2-fixture-safety-snapshot.md)
+- [M2.27 explicit fixture-to-AX identity binding](docs/m2-fixture-ax-identity.md)
+- [M2.28 fixture lifecycle and expiry contract](docs/m2-fixture-lifecycle-contract.md)
+- [M2.29 owned-fixture lifecycle assessment](docs/m2-fixture-lifecycle-assessment.md)
+- [M2.30 laboratory host event invalidation](docs/m2-fixture-host-invalidation.md)
+- [M2.31 native host operator checks](docs/m2-native-host-operator-checks.md)
+- [M2.32 fixture timing and diagnostic freshness design](docs/m2-fixture-timing-calibration.md)
+- [M2.33 bounded fixture timing collector](docs/m2-fixture-timing-collector.md)
 - [Read-only probe usage and manual checks](docs/m1-probe.md)
 - [M1 readiness and M2.1 acceptance criteria](docs/m1-readiness.md)
 - [P3 delay/timeout lab](docs/p3-lab.md)

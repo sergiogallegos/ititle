@@ -6,12 +6,21 @@ public enum FixtureSnapshotError: Error {
 }
 
 public struct FixtureSafetySnapshot: Sendable {
-  public static let keys = [
+  public static let historicalKeys = [
     "schema", "coverage", "run", "request", "sequence", "start", "end", "original", "number",
     "active", "visible", "minimized", "fullscreen", "hidden", "frontmost", "key", "main",
     "tabCount", "tabSelected", "tabBar", "sheetCount", "attached", "modal", "synthetic",
     "scenario", "focusedFault", "windowFault", "structuralFault",
   ]
+  public static let keys =
+    historicalKeys + [
+      "stateRevision", "registryRevision", "liveSerials", "originalLive", "lifecycleCoverage",
+      "uncertainty",
+    ]
+  public var liveSerials: [UInt64]? {
+    guard let raw = fields["liveSerials"], raw != "unavailable" else { return nil }
+    return raw == "none" ? [] : raw.split(separator: ",").compactMap { UInt64($0) }
+  }
   public static let flags = [
     "active", "visible", "minimized", "fullscreen", "hidden", "frontmost", "key", "main",
     "tabSelected", "tabBar", "attached", "modal", "synthetic", "focusedFault", "windowFault",
@@ -35,7 +44,9 @@ public struct FixtureSafetySnapshot: Sendable {
       throw FixtureSnapshotError.malformed
     }
     let parts = line.split(separator: " ", omittingEmptySubsequences: false)
-    guard parts.count == Self.keys.count + 1, parts.first == "safety-snapshot" else {
+    guard [Self.keys.count + 1, Self.historicalKeys.count + 1].contains(parts.count),
+      parts.first == "safety-snapshot"
+    else {
       throw FixtureSnapshotError.malformed
     }
     var fields: [String: String] = [:]
@@ -50,8 +61,10 @@ public struct FixtureSafetySnapshot: Sendable {
   }
 
   public init(fields: [String: String]) throws {
-    guard Set(fields.keys) == Set(Self.keys) else { throw FixtureSnapshotError.malformed }
-    guard fields["schema"] == "1", fields["coverage"] == "ownedFixtureOnly" else {
+    let keys = fields["schema"] == "1" ? Self.historicalKeys : Self.keys
+    guard Set(fields.keys) == Set(keys) else { throw FixtureSnapshotError.malformed }
+    guard ["1", "2"].contains(fields["schema"] ?? ""), fields["coverage"] == "ownedFixtureOnly"
+    else {
       throw FixtureSnapshotError.unsupported
     }
     func positive(_ name: String) throws -> UInt64 {
@@ -75,6 +88,27 @@ public struct FixtureSafetySnapshot: Sendable {
         name == "number" ? (value > 0 && value <= UInt64(Int32.max)) : value <= 64
       else { throw FixtureSnapshotError.malformed }
     }
+    if fields["schema"] == "2" {
+      _ = try positive("stateRevision")
+      _ = try positive("registryRevision")
+      guard ["true", "false", "unavailable"].contains(fields["originalLive"]!),
+        ["controlledFixtureTransitions", "observedEventsOnly", "unavailable"].contains(
+          fields["lifecycleCoverage"]!),
+        [
+          "none", "unsupportedScenario", "unavailableState", "registryLimit", "notificationFailure",
+          "counterExhausted",
+        ].contains(fields["uncertainty"]!)
+      else { throw FixtureSnapshotError.malformed }
+      let raw = fields["liveSerials"]!
+      if raw != "none" && raw != "unavailable" {
+        let parts = raw.split(separator: ",", omittingEmptySubsequences: false)
+        let serials = parts.compactMap { UInt64($0) }
+        guard serials.count == parts.count, serials.count <= 8,
+          serials.allSatisfy({ $0 > 0 }), serials == Array(Set(serials)).sorted(),
+          serials.map(String.init).joined(separator: ",") == raw
+        else { throw FixtureSnapshotError.malformed }
+      }
+    }
     self.run = run
     request = try positive("request")
     sequence = try positive("sequence")
@@ -87,7 +121,9 @@ public struct FixtureSafetySnapshot: Sendable {
   /// Fixed protocol keys only; unavailable/out-of-coverage states remain strings.
   public func value(_ key: String) -> String? { fields[key] }
   public var line: String {
-    "safety-snapshot " + Self.keys.map { "\($0)=\(fields[$0]!)" }.joined(separator: " ")
+    "safety-snapshot "
+      + (fields["schema"] == "1" ? Self.historicalKeys : Self.keys).map { "\($0)=\(fields[$0]!)" }
+      .joined(separator: " ")
   }
 }
 

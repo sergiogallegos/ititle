@@ -63,3 +63,11 @@ No permission change, user-window setter, desktop switch, display configuration 
 ## Next task
 
 Specify and test an explicit fixture-local AX identity binding for paired AX/snapshot observations, including wrong-run/window, same-bounds peer, and tab/sheet transitions. Do not infer the binding from geometry, a single AX window, or a shared PID. Keep the experiment separate from production eligibility and any real setter proposal.
+
+## M2.27 follow-up
+
+[Explicit fixture AX binding](m2-fixture-ax-identity.md) is implemented as a separate opt-in `--identity-run` lab mode. Default snapshot mode remains AX-free. Sampled own-window mapping does not clear production safety requirements.
+
+## M2.29 follow-up
+
+[Lifecycle assessment](m2-fixture-lifecycle-assessment.md) upgrades current fixture/lab exchange to schema 2, retaining schema 1 only for historical parsing. Recorded earlier schema-1 results above are unchanged. Source revisions and registry membership support diagnostic rejection; native host event delivery and production safety remain separate.

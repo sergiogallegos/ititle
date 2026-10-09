@@ -68,3 +68,21 @@ The [M2.10 contract](m2-delivery-admission.md) lists required pure-state and bar
 ## Owned-fixture snapshot lab
 
 [The snapshot protocol and lab](m2-fixture-safety-snapshot.md) add five deterministic protocol tests included in `scripts/verify`. Its separately invoked owned-process run covers native tab/sheet/hide state and preservation of armed faults without AX calls. This does not validate cross-process identity or production safety coverage.
+
+## Fixture AX identity experiment
+
+[The opt-in identity lab](m2-fixture-ax-identity.md) brackets dedicated-thread AX identifier reads with fresh fixture snapshots. It records exact fixture run/window mapping, equal-frame peers, and selected-tab enumeration; two deterministic identity tests cover malformed/wrong-run/window values. Production eligibility and native menu coverage remain separate.
+
+## Fixture lifecycle assessment
+
+[Schema-2 lifecycle diagnostics](m2-fixture-lifecycle-assessment.md) add eleven deterministic tests for revision/registry authority, exact pair context, invalidation and synthetic expiry. The separate `--lifecycle-run` checks owned peer recreation, inactive-tab membership, stable pairs and tab/sheet reversal rejection. Native host Pause/trust/process/environment delivery remains separately unvalidated.
+
+## Laboratory host event invalidation
+
+[The host owner and monitor](m2-fixture-host-invalidation.md) add six deterministic tests for exact completion, immediate revocation, retained occupancy, fresh recovery, terminal attachments, failed-read replacement and exhaustion cleanup. `--host-run` separately exercises controller Pause, native activation, owned exit and sequential replacement recovery. Space/display/sleep and effective permission changes need separate native checks.
+
+## Native host operator modes
+
+[Bounded desktop and permission modes](m2-native-host-operator-checks.md) require recorded native Space/off-desktop state or effective reader-trust transitions. A first desktop attempt timed out; the scoped retry passed. The separate permission app records effective loss/restoration and fresh recovery under an explicitly approved temporary grant, which was removed afterward. Its earlier untrusted preflight alone is not permission-loss acceptance.
+
+[M2.32's proposed timing collector](m2-fixture-timing-calibration.md) requires causal timestamp validation, independently attributable dispatch/delivery/assessment intervals, bounded terminal records including failures, and retained unfinished-worker occupancy. [M2.33](m2-fixture-timing-collector.md) implements eight timing tests and separate native delay/revocation/failure collection. Existing lifecycle tests cover synthetic expiry and policy change; no calibrated real age policy is selected.

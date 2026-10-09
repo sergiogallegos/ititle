@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")/.."
+swift build -c release --product iTileSafetySnapshotLab
+binary_dir=$(swift build -c release --show-bin-path)
+app_dir="dist/iTile Safety Permission Lab.app"
+mkdir -p "$app_dir/Contents/MacOS"
+cp "$binary_dir/iTileSafetySnapshotLab" "$app_dir/Contents/MacOS/iTileSafetySnapshotLab"
+cp Resources/SafetyPermissionLab-Info.plist "$app_dir/Contents/Info.plist"
+codesign --force --sign - "$app_dir"
+codesign --verify --strict --verbose=2 "$app_dir"
+printf 'Created %s. Opening it runs the explicit permission lab and replaces dist/safety-permission-lab.log.\n' "$app_dir"

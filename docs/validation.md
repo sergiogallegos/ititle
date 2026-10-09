@@ -1022,3 +1022,53 @@ Implemented [the separate fixture snapshot protocol, producer, consumer, and own
 Final formatting and `scripts/verify` passed 200 tests (130 core, 65 platform, five new protocol tests) plus the recovery-lab parser check. Release fixture packaging/signature verification passed. The final two-display owned-process run accepted 14 scenario samples covering baseline, hide/recovery, native tabs/selection/closure, one-tab visible/hidden bar, native sheet open/close, and retained structural/focused faults across repeated snapshots. An initial two-tab hidden-bar expectation was not met; it remained an incomplete run with normal cleanup. The final lab uses one-tab bar transitions and does not claim the unsupported case. Artifact hashes, timings, and bottom-origin display rectangles are recorded in the task document.
 
 The fixture exited normally; normal iTile was left running. No AX client read, permission change, user-window mutation, desktop/display configuration action, or new production scope occurred. Next: explicit fixture-local AX identity binding and paired observations. Changes remain local and uncommitted.
+
+
+## 2026-10-09 — M2.27 fixture-to-AX identity binding
+
+Committed and pushed completed M2.14–M2.26 work as `1f1cf06` to `origin/main`, then implemented [fixture-controlled identifiers and paired AX/snapshot observations](m2-fixture-ax-identity.md). Final formatting and verification passed 202 tests plus the recovery parser check. Fixture release packaging/signature verification passed. The owned-process live run accepted five pairs and 24 snapshot samples: baseline, equal-frame peer, selected second native tab, tab closure, and post-sheet-closure recovery. The native tab’s focused/list identity was serial 3/[3]; inactive original-list membership was not assumed. Earlier rejected comparisons exposed and corrected that laboratory assumption, with normal cleanup.
+
+The owned fixture exited normally. Normal iTile was neither rebuilt nor restarted; no permissions or user-window setters changed. This is cooperative fixture identity mapping, not production safety coverage. Open-sheet AX focus, process-replacement races, and new desktop transitions were not accepted in this run. Next: fixture-only lifecycle/invalidation/expiry contract. M2.27 changes remain local and uncommitted after the requested prior push.
+
+
+## 2026-10-09 — M2.28 fixture lifecycle and expiry contract
+
+Specified [schema-2 source authority and read-only pair assessment](m2-fixture-lifecycle-contract.md): checked state/registry revisions, bounded live serials, conservative pre-intent invalidation, distinct controlled/observed coverage, exact host use context, and unmeasured freshness without a diagnostic age policy. Tab/sheet open-close reversal cannot revive a sample; inactive-tab omission from AX enumeration does not imply retirement. Missing notifications and post-sample races remain explicit uncertainty, with no lease or production eligibility.
+
+Next: source revision/registry values and a pure diagnostic pair/context/expiry reducer, followed by separate controlled transition checks. Documentation-only work; no source, bundle, permission, window, display, or keyboard action changed. Latest source verification remains 202 tests plus the recovery parser check. Local Markdown links and whitespace checks passed. M2.27–M2.28 changes remain local and uncommitted; last requested push is `1f1cf06`.
+
+## 2026-10-09 — M2.29 fixture lifecycle source/value assessment
+
+Implemented [schema-2 source revisions/live registry and pure context/pair/expiry assessment](m2-fixture-lifecycle-assessment.md), isolated from production. Formatting and verification passed 213 tests plus the recovery parser self-check. Release fixture packaging/signature verification passed. The scoped two-display lab accepted 36 snapshots, six identity comparisons and three lifecycle pairs. Stable revision 32/32 was historical-consistent; tab reversal 33/39 and sheet reversal 40/51 returned matching fixed fields but rejected as sourceChanged. Peer recreation changed serial 2 to 3; inactive original membership survived AX omission; repeated armed fault snapshots preserved flags and revisions. Cleanup was normal.
+
+No permission, desktop/display configuration, user-window setter, or normal iTile rebuild/restart occurred. Freshness remains unmeasured. Host authority/revocation is implemented as pure values; complete native host callback delivery and in-flight Pause/trust/environment/process acceptance remain the next task. M2.27–M2.29 changes remain local and uncommitted; last requested push remains `1f1cf06`.
+
+## 2026-10-09 — M2.30 laboratory host event invalidation
+
+Implemented [the Foundation-only host owner, native monitor and pumped dedicated-reader wait](m2-fixture-host-invalidation.md). Formatting and verification passed 219 tests plus the recovery parser self-check. The scoped two-display live run recorded immediate outstanding Pause/resume rejection, fresh recovery, native activation callbacks with an outstanding pair (inside AX in one timestamped run and just after AX in the final rerun), fresh focus recovery, owned exit with a pending request/reader drain, one native termination notification and fresh replacement-run acceptance while the old attachment stayed stopped. Both fixture processes exited normally.
+
+No permission, Space/display configuration, sleep/wake, user-window setter or normal iTile rebuild/restart occurred. Host Space/display/sleep and effective-permission paths are wired but not natively accepted by this run. The next task is separately scoped native Space/permission invalidation and fresh recovery. Freshness remains unmeasured. Changes remain local and uncommitted; last requested push remains `1f1cf06`.
+
+## 2026-10-09 — M2.31 native desktop operator check and permission preparation
+
+Implemented [bounded operator modes, explicit AppKit event dispatch and separate permission-app packaging](m2-native-host-operator-checks.md). Formatting and verification passed 219 tests plus the parser/plist/shell checks. The first desktop attempt recorded only focus events and timed out with orderly cleanup. The retry recorded two native Space callbacks about 12.3 seconds apart, original active=false while away, old pair contextRevoked, original active=true after return, and a fresh historical-consistent pair (eight correlated snapshots). Cleanup was normal. Event pumping and monitor-specific operator clarification changed together, so neither alone is credited as the initial failure's cause.
+
+The separate permission app packaged/signature-verified successfully. Native untrusted preflight exited before fixture creation; the user then approved its temporary Accessibility grant and authenticated directly. The running app recorded effective trust loss (revocation 1), old-pair rejection with unchanged source state, trust restoration (revocation 2) and a fresh historical-consistent pair across seven correlated snapshots. Cleanup was normal. The user removed the temporary entry after automation could not select it reliably; a fresh settings snapshot verified absence and unchanged existing grants. Only the approved temporary permission entry changed and was removed afterward. Physical display configuration, sleep state, user-window geometry and the normal iTile artifact were unchanged. Production mutation stays disabled; changes remain local and uncommitted.
+
+M2.31 source/native acceptance is complete within its recorded scope. Next: fixture-only timing/freshness calibration design; no new age policy or setter consent exists. Changes remain local and uncommitted.
+
+
+## 2026-10-09 — M2.32 fixture timing and freshness calibration design
+
+Specified [the laboratory measurement envelope and bounded calibration experiment](m2-fixture-timing-calibration.md). The contract distinguishes source acquisition, worker dispatch, result publication/delivery and host assessment; age begins at the earliest source acquisition. It retains failures, missing/censored intervals, exact expiry boundaries, context revocation and post-sample races. Predeclared cohort/resource/output limits and dataset review precede any explicit experimental diagnostic policy. No real age policy is selected.
+
+Documentation-only work; no source, permission, fixture, window, display or normal iTile artifact changed. Latest source verification remains M2.31's 219 tests plus parser/plist/shell checks; its scoped native acceptance is unchanged. Local Markdown links and whitespace checks passed. Next: implement the bounded laboratory timing envelope and collector, then separately accept read-only measurements before calibration review. Changes remain local and uncommitted; last requested push remains `1f1cf06`.
+
+
+## 2026-10-09 — M2.33 bounded fixture timing collector
+
+Implemented [pure timing values, bounded structured collection and native timestamp adapters](m2-fixture-timing-collector.md) in separate laboratory targets. Source acquisition, dispatch, publication/delivery and assessment intervals retain partial failure endpoints; causal and cross-attempt clock regression stop collection. Exact matching completion/drain, physical timeout occupancy, fixed event/record/output caps and reserved terminal output are tested. No diagnostic age policy or production integration was added.
+
+Final formatting and `scripts/verify` passed 227 tests (130 core, 65 platform, 32 fixture diagnostics), plus parser/plist/shell checks. Final native collection completed 64 attempts and 18 events within 80,882 bytes, with orderly fixture cleanup and no occupied reader. Ordinary pairs all completed; an activation during dispatch attempt 23 revoked that pair, and subsequent dispatch/assessment unsupported results were retained. Invalidation recorded eight Pause revocations, seven sourceChanged reversals and one deliberate invalid-PID preflight failure with partial timestamps. The task document records exact counts, artifact/dataset hashes, measurement ranges and attribution limits. Earlier exploratory runs are not substituted for final-build results.
+
+No permission, physical desktop/display configuration, user-window setter or normal iTile artifact changed. The temporary permission app remained removed. Freshness stays unmeasured; no latency percentile authorizes mutation. Next: review this dataset's attribution/rejection coverage and explicitly scope any additional fixture-only diagnostic policy evaluation. Local Markdown targets and whitespace checks passed. Changes remain local and uncommitted; last requested push remains `1f1cf06`.

@@ -12,10 +12,12 @@ private func emitFixtureEvent(_ event: String) {
 @MainActor
 final class FixtureApplication: NSApplication {
   var hideOnFocusedRead = false
+  var invalidation: (@MainActor () -> Void)?
 
   override func accessibilityFocusedWindow() -> Any? {
     let focusedWindow = super.accessibilityFocusedWindow()
     guard hideOnFocusedRead else { return focusedWindow }
+    invalidation?()
     hideOnFocusedRead = false
     emitFixtureEvent("focused-read-begin")
     hide(nil)
@@ -32,12 +34,18 @@ final class FixtureApplication: NSApplication {
 /// public AppKit AX objects, not a claim about native application's tree shape.
 @MainActor
 final class StructuralFault {
+  var invalidation: (@MainActor () -> Void)?
   var childDelay: Double = 0
   var hideOnChildrenRead = false
   var stallOnChildrenRead = false
   var transitionOnChildrenRead: (@MainActor () -> Void)?
 
   func run() {
+    if childDelay > 0 || hideOnChildrenRead || stallOnChildrenRead
+      || transitionOnChildrenRead != nil
+    {
+      invalidation?()
+    }
     if let transition = transitionOnChildrenRead {
       transitionOnChildrenRead = nil
       transition()
@@ -85,6 +93,7 @@ final class FixtureStructuralNode: NSAccessibilityElement {
 /// worker can encounter several bounded timeouts while this fixture recovers.
 @MainActor
 final class FixtureWindow: NSWindow {
+  var invalidation: (@MainActor () -> Void)?
   var stallOnRoleRead = false
   var structuralChildren: [Any]?
 
@@ -94,6 +103,7 @@ final class FixtureWindow: NSWindow {
 
   override func accessibilityRole() -> NSAccessibility.Role? {
     guard stallOnRoleRead else { return super.accessibilityRole() }
+    invalidation?()
     stallOnRoleRead = false
     emitFixtureEvent("window-read-begin")
     Thread.sleep(forTimeInterval: 1.5)
@@ -106,6 +116,8 @@ final class FixtureWindow: NSWindow {
 @MainActor
 final class FixtureDelegate: NSObject, NSApplicationDelegate {
   private let safetyRun = UUID()
+  private var lifecycle = FixtureLifecycleSource()
+  private var owned: [ObjectIdentifier: UInt64] = [:]
   private var safetyIssuer = FixtureSnapshotIssuer()
   private var safetyScenario = "ordinary"
   private var window: FixtureWindow?
@@ -125,6 +137,9 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
       window.tabbingMode = .preferred
       window.tabbingIdentifier = "local.itile.owned-tabs"
     }
+    window.invalidation = { [weak self] in self?.lifecycle.transition() }
+    (NSApp as? FixtureApplication)?.invalidation = { [weak self] in self?.lifecycle.transition() }
+    markIdentity(window)
     window.title = "iTile P3 \(label) Fixture"
     window.isReleasedWhenClosed = false
     state.frame = NSRect(x: 20, y: 45, width: 380, height: 40)
@@ -140,9 +155,26 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
         self, selector: #selector(desktopChanged),
         name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
     }
+    if CommandLine.arguments.contains("--safety-probe") {
+      for name in [
+        NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
+        NSApplication.didHideNotification, NSApplication.didUnhideNotification,
+        NSApplication.didChangeScreenParametersNotification,
+      ] {
+        NotificationCenter.default.addObserver(
+          self, selector: #selector(lifecycleChanged), name: name, object: nil)
+      }
+      for name in [
+        NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.willSleepNotification,
+        NSWorkspace.didWakeNotification,
+      ] {
+        NSWorkspace.shared.notificationCenter.addObserver(
+          self, selector: #selector(lifecycleChanged), name: name, object: nil)
+      }
+    }
     emit("ready")
     if CommandLine.arguments.contains("--safety-probe") {
-      emit("safety-ready schema=1 run=\(safetyRun.uuidString)")
+      emit("safety-ready schema=2 run=\(safetyRun.uuidString)")
     }
     // Only this process's parent owns stdin. EOF exits; no listener or network service.
     Thread.detachNewThread { [weak self] in
@@ -170,6 +202,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
           ].contains(command)
         else { continue }
         DispatchQueue.main.async { [weak self] in
+          if command != "desktop-status" { self?.lifecycle.transition() }
           if command == "quit" {
             NSApp.terminate(nil)
             return
@@ -232,6 +265,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
   private func configureStructure(_ command: String) {
     guard let window else { return }
     if let sheet {
+      retire(sheet)
       window.endSheet(sheet)
       sheet.orderOut(nil)
     }
@@ -248,6 +282,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
     } else if command != "close-sheet" {
       func node(_ role: NSAccessibility.Role = .group, parent: AnyObject) -> FixtureStructuralNode {
         let node = FixtureStructuralNode()
+        node.fault.invalidation = { [weak self] in self?.lifecycle.transition() }
         node.setAccessibilityElement(true)
         node.setAccessibilityRole(role)
         node.setAccessibilityParent(parent)
@@ -369,6 +404,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
       let peer = NSWindow(
         contentRect: window.contentRect(forFrameRect: window.frame),
         styleMask: window.styleMask, backing: .buffered, defer: false)
+      markIdentity(peer)
       peer.isReleasedWhenClosed = false
       peer.tabbingMode = .disallowed
       if CommandLine.arguments.contains("--desktop-probe") {
@@ -380,7 +416,10 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
       emitFixtureEvent(
         peer.frame == window.frame ? "visibility-peer-equal" : "visibility-peer-different")
     case "visibility-peer-close":
-      visibilityPeer?.close()
+      if let visibilityPeer {
+        retire(visibilityPeer)
+        visibilityPeer.close()
+      }
       visibilityPeer = nil
     case "visibility-hide": NSApp.hide(nil)
     default: return
@@ -400,6 +439,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
       let tab = NSWindow(
         contentRect: window.frame, styleMask: [.titled, .closable, .resizable],
         backing: .buffered, defer: false)
+      markIdentity(tab)
       tab.title = "Owned second tab"
       tab.isReleasedWhenClosed = false
       tab.tabbingMode = .preferred
@@ -420,7 +460,10 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
         window.toggleTabBar(nil)
       }
     case "native-tabs-close":
-      secondTab?.close()
+      if let secondTab {
+        retire(secondTab)
+        secondTab.close()
+      }
       secondTab = nil
       window.makeKeyAndOrderFront(nil)
     default: return
@@ -435,6 +478,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
     let sheet = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 300, height: 100),
       styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    markIdentity(sheet)
     sheet.isReleasedWhenClosed = false
     sheet.title = "Owned native sheet"
     let label = NSTextField(labelWithString: "Native AppKit sheet — fixture only")
@@ -442,6 +486,49 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
     sheet.contentView?.addSubview(label)
     self.sheet = sheet
     window.beginSheet(sheet)
+  }
+
+  @objc private func lifecycleChanged(_ notification: Notification) {
+    lifecycle.transition()
+    if notification.name == NSWindow.willCloseNotification,
+      let window = notification.object as? NSWindow
+    {
+      retire(window)
+    }
+  }
+
+  private func retire(_ window: NSWindow) {
+    if let serial = owned.removeValue(forKey: ObjectIdentifier(window)) {
+      NotificationCenter.default.removeObserver(self, name: nil, object: window)
+      lifecycle.retire(serial)
+    }
+  }
+
+  private func markIdentity(_ window: NSWindow) {
+    guard CommandLine.arguments.contains("--safety-probe") else { return }
+    guard let serial = try? lifecycle.create() else {
+      emit("identity-exhausted")
+      return
+    }
+    owned[ObjectIdentifier(window)] = serial
+    for name in [
+      NSWindow.willCloseNotification, NSWindow.didBecomeKeyNotification,
+      NSWindow.didResignKeyNotification, NSWindow.didBecomeMainNotification,
+      NSWindow.didResignMainNotification,
+      NSWindow.didMoveNotification, NSWindow.didResizeNotification,
+      NSWindow.didMiniaturizeNotification,
+      NSWindow.didDeminiaturizeNotification, NSWindow.didEnterFullScreenNotification,
+      NSWindow.didExitFullScreenNotification, NSWindow.willBeginSheetNotification,
+      NSWindow.didEndSheetNotification,
+    ] {
+      NotificationCenter.default.addObserver(
+        self, selector: #selector(lifecycleChanged), name: name, object: window)
+    }
+    if CommandLine.arguments.contains("--identity-probe"),
+      let identity = try? FixtureWindowIdentity(run: safetyRun, serial: serial)
+    {
+      window.setAccessibilityIdentifier(identity.identifier)
+    }
   }
 
   /// Own AppKit state only. Never call the armed accessibility accessors here.
@@ -462,7 +549,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
           || $0.fault.transitionOnChildrenRead != nil
       }
       var fields: [String: String] = [
-        "schema": "1", "coverage": "ownedFixtureOnly", "run": safetyRun.uuidString,
+        "schema": "2", "coverage": "ownedFixtureOnly", "run": safetyRun.uuidString,
         "request": String(request), "sequence": String(sequence), "start": String(started),
         "original": "1",
         "number": window.windowNumber > 0 ? String(window.windowNumber) : "unavailable",
@@ -483,6 +570,12 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
         "focusedFault": flag(app.hideOnFocusedRead), "windowFault": flag(window.stallOnRoleRead),
         "structuralFault": flag(structuralFault),
       ]
+      let metadata: Set<String> = ["schema", "coverage", "run", "request", "sequence", "start"]
+      var sampled = fields.filter { !metadata.contains($0.key) }
+      sampled["frame"] =
+        "\(window.frame.origin.x),\(window.frame.origin.y),\(window.frame.width),\(window.frame.height)"
+      lifecycle.observe(sampled)
+      fields.merge(lifecycle.fields) { _, new in new }
       fields["end"] = String(ProcessInfo.processInfo.systemUptime)
       let snapshot = try FixtureSafetySnapshot(fields: fields)
       // Unlike fixture events, the versioned record has no trailing event timestamp.
