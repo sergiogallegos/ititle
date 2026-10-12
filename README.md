@@ -2,7 +2,7 @@
 
 A minimal, keyboard-driven tiling companion for macOS. Built from scratch in Swift with zero third-party dependencies.
 
-**Status: M1 read-only probe implemented with partial manual validation; real window mutation remains gated. This is not yet a working window manager.** See the [replayable fixture timing and next task](docs/m2-fixture-timing-replay.md), [production boundary review](docs/m2-production-readiness.md) and [M1 readiness](docs/m1-readiness.md). The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
+**Status: M1 read-only probe implemented with partial manual validation; real window mutation remains gated. This is not yet a working window manager.** See the [implemented setup/stop diagnostics and next task](docs/m2-fixture-setup-records.md), [production boundary review](docs/m2-production-readiness.md) and [M1 readiness](docs/m1-readiness.md). The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
 
 The goal is a small tool that arranges ordinary windows predictably, responds quickly to commands, and yields gracefully when macOS or an application cannot cooperate. One menu-bar app, public APIs, SIP enabled, no external services.
 
@@ -101,6 +101,8 @@ docs/                   Product, architecture, decisions, and research
 - [M2.33 bounded fixture timing collector](docs/m2-fixture-timing-collector.md)
 - [M2.34 timing dataset review and replayable follow-up](docs/m2-fixture-timing-review.md)
 - [M2.35 attributed, replayable timing and recovery checks](docs/m2-fixture-timing-replay.md)
+- [M2.36 schema-2 review and setup/stop diagnostics scope](docs/m2-fixture-setup-diagnostics.md)
+- [M2.37 bounded setup records, first stop and schema-3 replay](docs/m2-fixture-setup-records.md)
 - [Read-only probe usage and manual checks](docs/m1-probe.md)
 - [M1 readiness and M2.1 acceptance criteria](docs/m1-readiness.md)
 - [P3 delay/timeout lab](docs/p3-lab.md)

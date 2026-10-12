@@ -84,3 +84,7 @@ Every recorded terminal reports orderly=true and occupied=false. No permission e
 ## Next task — M2.36 dataset review and setup diagnostics scope
 
 Review the schema-2 datasets' attribution/recovery and suitability, keeping their separate build identities and incomplete outcomes. Specify bounded, fixed setup/stop diagnostics for the final exclusion interruption before any new run; do not infer its cause from activation alone or rerun until acceptance. Any later diagnostic-age evaluation must declare candidate ages/revisions, exact included dataset/cohort hashes, exclusions and rationale, replay through the same guards, and retain unmeasured production freshness. No numerical policy or mutation proposal is selected here.
+
+## M2.36 follow-up
+
+[Schema-2 review and setup/stop diagnostic scope](m2-fixture-setup-diagnostics.md) completes that review and specifies the next M2.37 source task. It locates the missing recovery boundary without claiming a physical cause, proposes closed stage/stop records and reserves their bytes under the existing output cap. Those diagnostics remain proposed; the results above remain historical.

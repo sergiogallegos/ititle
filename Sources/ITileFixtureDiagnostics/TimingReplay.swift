@@ -31,6 +31,11 @@ public struct FixtureTimingManifest: Codable, Sendable {
   public let fixtureHash: String
   public let initialContext: FixtureUseContext
   public let controlledExclusion: Bool
+  public let runStart: Double?
+  public let collectionDeadline: Double?
+  public let controlledSetupFailure: Bool?
+  public let setupLimit: Int?
+  public let summaryLimit: Int?
   public private(set) var cohortAttempts = FixtureTimingBudget.cohortAttempts
   public private(set) var attemptLimit = FixtureTimingBudget.attempts
   public private(set) var eventLimit = 128
@@ -44,7 +49,8 @@ public struct FixtureTimingManifest: Codable, Sendable {
 
   public init(
     os: String, utc: String, labHash: String, fixtureHash: String,
-    initialContext: FixtureUseContext, controlledExclusion: Bool = false
+    initialContext: FixtureUseContext, controlledExclusion: Bool = false,
+    runStart: Double? = nil, collectionDeadline: Double? = nil, controlledSetupFailure: Bool? = nil
   ) {
     self.os = os
     self.utc = utc
@@ -52,6 +58,12 @@ public struct FixtureTimingManifest: Codable, Sendable {
     self.fixtureHash = fixtureHash
     self.initialContext = initialContext
     self.controlledExclusion = controlledExclusion
+    self.runStart = runStart
+    self.collectionDeadline = collectionDeadline
+    self.controlledSetupFailure = controlledSetupFailure
+    schema = runStart == nil ? 2 : 3
+    setupLimit = schema == 3 ? FixtureDiagnosticBudget.setupLimit : nil
+    summaryLimit = schema == 3 ? FixtureDiagnosticBudget.summaryBytes : nil
   }
 
   public var valid: Bool {
@@ -61,7 +73,20 @@ public struct FixtureTimingManifest: Codable, Sendable {
           (48...57).contains($0) || (97...102).contains($0)
         }
     }
-    return kind == "manifest" && schema == 2 && os.utf8.count <= 128
+    let versionValid: Bool
+    if schema == 2 {
+      versionValid =
+        runStart == nil && collectionDeadline == nil && controlledSetupFailure == nil
+        && setupLimit == nil && summaryLimit == nil
+    } else if schema == 3, let runStart, let collectionDeadline {
+      versionValid =
+        runStart.isFinite && runStart >= 0 && collectionDeadline.isFinite
+        && collectionDeadline > runStart && collectionDeadline == runStart + 180
+        && controlledSetupFailure != nil && setupLimit == 14 && summaryLimit == 15104
+    } else {
+      versionValid = false
+    }
+    return kind == "manifest" && versionValid && os.utf8.count <= 128
       && utc.utf8.count <= 32 && ISO8601DateFormatter().date(from: utc) != nil
       && hash(labHash) && hash(fixtureHash) && initialContext.expected.serial == 1
       && initialContext.trusted && !initialContext.paused && !initialContext.stopped
@@ -86,6 +111,9 @@ public struct FixtureTimingReplayReport: Encodable, Sendable {
   public let outcomes: [String: Int]
   /// Each snapshot contributes its fixed unmet requirements; these are not primary outcomes.
   public let exclusions: [String: Int]
+  public var setups: Int? = nil
+  public var firstStop: FixtureStopCategory? = nil
+  public var summaryPresent: Bool? = nil
 }
 
 /// Bounded schema-2 replay through the existing host, with no AX/AppKit dependency or policy.
@@ -107,7 +135,7 @@ public enum FixtureTimingReplay {
     case event(FixtureTimingEvent)
   }
 
-  private static func decode<T: Codable>(_ type: T.Type, data: Data) throws -> T {
+  static func decode<T: Codable>(_ type: T.Type, data: Data) throws -> T {
     let value = try JSONDecoder().decode(type, from: data)
     let original = try JSONSerialization.jsonObject(with: data) as? NSDictionary
     let canonical =
@@ -118,6 +146,18 @@ public enum FixtureTimingReplay {
   }
 
   public static func review(_ data: Data) throws -> FixtureTimingReplayReport {
+    guard data.count <= FixtureTimingBudget.outputBytes, let line = data.split(separator: 10).first,
+      let object = try JSONSerialization.jsonObject(with: Data(line)) as? [String: Any]
+    else { throw Failure.bound }
+    let last = data.split(separator: 10).last!
+    let terminal = try JSONSerialization.jsonObject(with: Data(last)) as? [String: Any]
+    if object["schema"] as? Int == 3 || terminal?["schema"] as? Int == 3 {
+      return try FixtureDiagnosticReplay.review(data)
+    }
+    return try reviewHistorical(data)
+  }
+
+  static func reviewHistorical(_ data: Data) throws -> FixtureTimingReplayReport {
     guard !data.isEmpty, data.count <= FixtureTimingBudget.outputBytes, data.last == 10 else {
       throw Failure.bound
     }

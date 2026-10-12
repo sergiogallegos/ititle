@@ -38,11 +38,14 @@ public struct FixtureTimingRecord: Codable, Sendable {
   public var assessment: FixturePairResult?
   public private(set) var times: [String: Double] = [:]
 
-  public init(index: Int, cohort: FixtureTimingCohort, requestedDelay: Double, run: UUID) {
+  public init(
+    index: Int, cohort: FixtureTimingCohort, requestedDelay: Double, run: UUID, schema: Int = 2
+  ) {
     self.index = index
     self.cohort = cohort
     self.requestedDelay = requestedDelay
     self.run = run
+    self.schema = schema
   }
 
   public mutating func mark(_ point: FixtureTimingPoint, at time: Double) {
@@ -51,8 +54,14 @@ public struct FixtureTimingRecord: Codable, Sendable {
 
   public func time(_ point: FixtureTimingPoint) -> Double? { times[point.rawValue] }
 
+  func historicalCopy() -> Self {
+    var value = self
+    value.schema = 2
+    return value
+  }
+
   public var valid: Bool {
-    guard schema == 2, kind == "pair", index > 0, index <= 64,
+    guard [2, 3].contains(schema), kind == "pair", index > 0, index <= 64,
       requestedDelay.isFinite, requestedDelay >= 0,
       requestedDelay <= 0.5,
       times.allSatisfy({ key, value in
@@ -163,16 +172,21 @@ public struct FixtureTimingEvent: Codable, Sendable {
   public let revocation: UInt64
   public let pending: UInt64?
   public let context: FixtureUseContext?
+  public let direction: FixtureActivationDirection?
+  public let relation: FixtureActivationRelation?
 
   public init(
     code: String, time: Double, revocation: UInt64, pending: UInt64?,
-    context: FixtureUseContext? = nil
+    context: FixtureUseContext? = nil, direction: FixtureActivationDirection? = nil,
+    relation: FixtureActivationRelation? = nil
   ) {
     self.code = code
     self.time = time
     self.revocation = revocation
     self.pending = pending
     self.context = context
+    self.direction = direction
+    self.relation = relation
   }
 
   public var hostEvent: FixtureHostEvent? {
@@ -195,6 +209,11 @@ public struct FixtureTimingCollector: Sendable {
   public private(set) var occupied: Int?
   public private(set) var stopped = false
   public private(set) var bytes = Data()
+  public private(set) var firstStop: FixtureFirstStop?
+  public private(set) var setups: [FixtureSetupRecord] = []
+  public private(set) var admissions = 0
+  private let schema: Int
+  private let failureClock: (@Sendable () -> Double)?
   private var counts: [FixtureTimingCohort: Int] = [:]
   private var eventCount = 0
   private var closed = false
@@ -207,22 +226,25 @@ public struct FixtureTimingCollector: Sendable {
 
   public init(
     byteLimit: Int = 262_144, attemptLimit: Int = 64, cohortLimit: Int = 16,
-    eventLimit: Int = 128
+    eventLimit: Int = 128, schema: Int = 2, failureClock: (@Sendable () -> Double)? = nil
   ) {
+    self.schema = schema
+    self.failureClock = failureClock
     self.byteLimit = min(262_144, max(1024, byteLimit))
-    self.attemptLimit = min(64, max(1, attemptLimit))
+    self.attemptLimit = min(schema == 3 ? 28 : 64, max(1, attemptLimit))
     self.cohortLimit = min(16, max(1, cohortLimit))
     self.eventLimit = min(128, max(1, eventLimit))
   }
 
   public mutating func begin(_ cohort: FixtureTimingCohort) throws -> Int {
-    guard !stopped, occupied == nil, records.count < attemptLimit,
+    guard !stopped, occupied == nil, admissions < attemptLimit,
       counts[cohort, default: 0] < cohortLimit
     else {
       stopped = true
       throw Failure.bound
     }
-    let index = records.count + 1
+    let index = admissions + 1
+    admissions = index
     occupied = index
     pendingCohort = cohort
     counts[cohort, default: 0] += 1
@@ -243,13 +265,35 @@ public struct FixtureTimingCollector: Sendable {
     if terminal.valid {
       lastBoundary = max(lastBoundary, terminal.times.values.max() ?? lastBoundary)
     }
-    records.append(terminal)
+    if schema == 2 { records.append(terminal) }
     if readerDrained {
       occupied = nil
       pendingCohort = nil
     }
+    if schema == 3 && (!terminal.valid || terminal.outcome == .malformedTiming) {
+      latchStop(
+        FixtureFirstStop(
+          stage: .assessment, category: .clockFailure, at: failureClock?(),
+          pairs: records.count, pairOccupied: occupied != nil, readerOccupied: !readerDrained))
+      throw Failure.bound
+    }
     try append(terminal, maximumBytes: FixtureTimingBudget.pairBytes)
+    if schema == 3 { records.append(terminal) }
     if terminal.outcome == .timedOut || terminal.outcome == .incomplete { stopped = true }
+  }
+
+  public mutating func latchStop(_ value: FixtureFirstStop) {
+    guard schema == 3, !closed, firstStop == nil, value.valid else { return }
+    firstStop = value
+    stopped = true
+  }
+
+  public mutating func setup(_ value: FixtureSetupRecord) throws {
+    guard schema == 3, value.valid, setups.count < 14,
+      value.sequence == setups.count + 1, value.nextIndex == admissions + 1
+    else { throw Failure.mismatch }
+    try append(value, maximumBytes: FixtureDiagnosticBudget.setupBytes)
+    setups.append(value)
   }
 
   public mutating func drained(index: Int) throws {
@@ -263,6 +307,15 @@ public struct FixtureTimingCollector: Sendable {
       event.hostEvent != nil
     else {
       stopped = true
+      latchStop(
+        FixtureFirstStop(
+          stage: .output,
+          category: !event.time.isFinite || event.time < 0
+            ? .clockFailure
+            : event.hostEvent == nil ? .protocolFailure : .observerLimit,
+          at: event.time,
+          request: event.pending, pairs: records.count,
+          pairOccupied: occupied != nil, readerOccupied: occupied != nil))
       throw Failure.bound
     }
     eventCount += 1
@@ -273,10 +326,25 @@ public struct FixtureTimingCollector: Sendable {
     guard !closed else { throw Failure.bound }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    var data = try encoder.encode(value)
+    let encoded: Data
+    do { encoded = try encoder.encode(value) } catch {
+      latchStop(
+        FixtureFirstStop(
+          stage: .output, category: .protocolFailure, at: failureClock?(),
+          pairs: records.count, pairOccupied: occupied != nil, readerOccupied: occupied != nil))
+      throw error
+    }
+    var data = encoded
     data.append(10)
-    guard data.count <= maximumBytes, bytes.count + data.count <= byteLimit - 512 else {
+    guard data.count <= maximumBytes,
+      bytes.count + data.count <= byteLimit - (schema == 3 ? 1024 : 512)
+    else {
       stopped = true
+      latchStop(
+        FixtureFirstStop(
+          stage: .output,
+          category: data.count > maximumBytes ? .recordLimit : .outputLimit, at: failureClock?(),
+          pairs: records.count, pairOccupied: occupied != nil, readerOccupied: occupied != nil))
       throw Failure.bound
     }
     bytes.append(data)
@@ -285,6 +353,13 @@ public struct FixtureTimingCollector: Sendable {
   /// Reserved output survives a full record budget. No arbitrary strings or paths.
   public mutating func close(orderly: Bool, passed: Bool) {
     guard !closed else { return }
+    if schema == 3 && firstStop == nil && (!passed || !orderly || stopped) {
+      latchStop(
+        FixtureFirstStop(
+          stage: !orderly ? .cleanup : .output,
+          category: .unclassified, at: failureClock?(),
+          pairs: records.count, pairOccupied: occupied != nil, readerOccupied: occupied != nil))
+    }
     closed = true
     struct Terminal: Encodable {
       let kind = "terminal"
@@ -293,13 +368,23 @@ public struct FixtureTimingCollector: Sendable {
       let attempts: Int
       let occupied: Bool
       let calibrationSuitable: Bool
+      let schema: Int?
+      let records: Int?
+      let setups: Int?
+      let firstStop: Bool?
     }
     let value = Terminal(
       orderly: orderly, complete: passed && orderly && !stopped && occupied == nil,
-      attempts: records.count, occupied: occupied != nil,
+      attempts: schema == 3 ? admissions : records.count, occupied: occupied != nil,
       calibrationSuitable: passed && orderly && !stopped && occupied == nil
         && records.count == FixtureTimingBudget.attempts && records.allSatisfy(\.expectedOutcome)
-        && !records.contains(where: { $0.phase == .exclusion }))
+        && !records.contains(where: { $0.phase == .exclusion }),
+      schema: schema == 3 ? 3 : nil, records: schema == 3 ? records.count : nil,
+      setups: schema == 3 ? setups.count : nil, firstStop: schema == 3 ? firstStop != nil : nil)
+    if let firstStop, let data = try? JSONEncoder().encode(firstStop), data.count < 512 {
+      bytes.append(data)
+      bytes.append(10)
+    }
     if let data = try? JSONEncoder().encode(value) {
       bytes.append(data)
       bytes.append(10)

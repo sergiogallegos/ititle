@@ -8,6 +8,7 @@ final class LabLifecycleMonitor: NSObject {
   private static var applicationPrepared = false
   var host: FixtureDiagnosticHost
   private let pid: Int32
+  private let ownedRunning: () -> Bool
   private(set) var activationEvents = 0
   private(set) var terminationEvents = 0
   private(set) var spaceEvents = 0
@@ -17,13 +18,14 @@ final class LabLifecycleMonitor: NSObject {
   private var events = 0
   private(set) var overflow = false
 
-  init(run: UUID, pid: Int32) throws {
+  init(run: UUID, pid: Int32, ownedRunning: @escaping () -> Bool) throws {
     if !Self.applicationPrepared {
       _ = NSApplication.shared.setActivationPolicy(.prohibited)
       NSApplication.shared.finishLaunching()
       Self.applicationPrepared = true
     }
     self.pid = pid
+    self.ownedRunning = ownedRunning
     host = FixtureDiagnosticHost(
       context: FixtureUseContext(
         expected: try FixtureWindowIdentity(run: run, serial: 1), trusted: AXIsProcessTrusted()))
@@ -55,7 +57,10 @@ final class LabLifecycleMonitor: NSObject {
     host.observe(.stop)
   }
 
-  private func record(_ event: FixtureHostEvent, code: String) {
+  private func record(
+    _ event: FixtureHostEvent, code: String, direction: FixtureActivationDirection? = nil,
+    relation: FixtureActivationRelation? = nil
+  ) {
     guard !overflow else { return }
     guard events < 128 else {
       overflow = true
@@ -69,7 +74,8 @@ final class LabLifecycleMonitor: NSObject {
       timingSink(
         FixtureTimingEvent(
           code: code, time: time, revocation: host.context.revocation,
-          pending: host.pendingRequest, context: host.context))
+          pending: host.pendingRequest, context: host.context, direction: direction,
+          relation: relation))
       return
     }
     print(
@@ -79,7 +85,19 @@ final class LabLifecycleMonitor: NSObject {
 
   @objc private func activation(_ notification: Notification) {
     if activationEvents < 128 { activationEvents += 1 }
-    record(.activation, code: "activation")
+    let direction: FixtureActivationDirection =
+      notification.name == NSWorkspace.didActivateApplicationNotification ? .activate : .deactivate
+    let relation: FixtureActivationRelation
+    if !ownedRunning() || host.context.stopped {
+      relation = .unavailable
+    } else if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+      as? NSRunningApplication
+    {
+      relation = app.processIdentifier == pid ? .owned : .unrelated
+    } else {
+      relation = .unavailable
+    }
+    record(.activation, code: "activation", direction: direction, relation: relation)
   }
 
   @objc private func environment(_ notification: Notification) {
