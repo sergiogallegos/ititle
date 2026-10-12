@@ -5,6 +5,10 @@ import Darwin
 import Foundation
 import ITileFixtureDiagnostics
 
+if CommandLine.arguments.dropFirst().first == "--compare-diagnostic-ages" {
+  runAgeComparison(arguments: CommandLine.arguments)
+}
+
 // Offline replay runs before application/trust setup and never creates a fixture.
 if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--replay-timing" {
   do {

@@ -87,3 +87,7 @@ Dataset SHA-256 identities:
 ## Next task
 
 Review the schema-3 dataset attribution, observed setup/stop coverage and remaining native gaps. Keep the ordinary unsuitable outcome and the controlled incomplete result separate from passing expected checks. Explicitly scope any further fixture-only failure experiment or diagnostic-policy evaluation, naming exact artifact/build identities, included/excluded cohorts, candidate policies and rationale before evaluating them. No new run, numerical policy or setter consent follows automatically from these measurements.
+
+## M2.38 follow-up
+
+[The schema-3 attribution/coverage review](m2-fixture-diagnostic-policy-scope.md) now completes that task and specifies M2.39's bounded offline diagnostic-age comparison. The five candidates, exact dataset/build identities and included/excluded cohorts are predeclared; original unsuitable/incomplete and primary rejection results remain unchanged. No evaluation or new native run was performed by the review.
