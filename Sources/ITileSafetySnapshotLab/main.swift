@@ -5,6 +5,32 @@ import Darwin
 import Foundation
 import ITileFixtureDiagnostics
 
+// Offline replay runs before application/trust setup and never creates a fixture.
+if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--replay-timing" {
+  do {
+    let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: CommandLine.arguments[2]))
+    defer { try? handle.close() }
+    var data = Data()
+    while let chunk = try handle.read(upToCount: 16384), !chunk.isEmpty {
+      guard data.count + chunk.count <= FixtureTimingBudget.outputBytes else {
+        throw FixtureTimingReplay.Failure.bound
+      }
+      data.append(chunk)
+    }
+    let report = try FixtureTimingReplay.review(data)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    var output = try encoder.encode(report)
+    output.append(10)
+    try FileHandle.standardOutput.write(contentsOf: output)
+    exit(report.complete ? 0 : 1)
+  } catch {
+    let reason = (error as? FixtureTimingReplay.Failure)?.rawValue ?? "malformed"
+    print("{\"kind\":\"replayFailure\",\"reason\":\"\(reason)\"}")
+    exit(1)
+  }
+}
+
 private enum LabFailure: Error { case incomplete(String) }
 
 /// Fixed owned-process lab. AX is opt-in; no permission mutation or production model.
@@ -16,18 +42,21 @@ private final class SnapshotLab {
   private var buffer = Data()
   private var lines: [(text: String, receipt: Double)] = []
   private var lastReceipt: Double = 0
+  private var lastSelection: Double = 0
   private var lastSnapshotTimes: [FixtureTimingPoint: Double] = [:]
   private var activeTimingReader: OwnedAXIdentityReader?
   private let timingMode: Bool
-  private var timingCollector = FixtureTimingCollector()
+  private let exclusionMode: Bool
+  private var timingCollector = FixtureTimingCollector(attemptLimit: FixtureTimingBudget.attempts)
   private var received = 0
   private var request: UInt64 = 0
   private var consumer: FixtureSnapshotConsumer?
   private var monitor: LabLifecycleMonitor?
   private let deadline: Double
 
-  init(operatorMode: Bool = false, timingMode: Bool = false) {
+  init(operatorMode: Bool = false, timingMode: Bool = false, exclusionMode: Bool = false) {
     self.timingMode = timingMode
+    self.exclusionMode = exclusionMode
     deadline = ProcessInfo.processInfo.systemUptime + (operatorMode || timingMode ? 180 : 30)
   }
 
@@ -72,11 +101,6 @@ private final class SnapshotLab {
     }
     consumer = FixtureSnapshotConsumer(run: run)
     if hostMode { monitor = try LabLifecycleMonitor(run: run, pid: child.processIdentifier) }
-    if timingMode {
-      monitor?.timingSink = { [weak self] event in
-        try? self?.timingCollector.event(event)
-      }
-    }
   }
 
   private func pump() {
@@ -108,6 +132,7 @@ private final class SnapshotLab {
       if let index = lines.firstIndex(where: { matching($0.text) }) {
         let line = lines.remove(at: index)
         lastReceipt = line.receipt
+        lastSelection = ProcessInfo.processInfo.systemUptime
         return line.text
       }
       var bytes = [UInt8](repeating: 0, count: 4096)
@@ -165,6 +190,8 @@ private final class SnapshotLab {
           || $0.hasPrefix("safety-unavailable ")
       }
       lastSnapshotTimes[.beforeReceipt] = lastReceipt
+      lastSnapshotTimes[.beforeSelection] = lastSelection
+      lastSnapshotTimes[.beforeParseEntry] = ProcessInfo.processInfo.systemUptime
       let sample = try consumer!.consume(line, at: lastReceipt)
       lastSnapshotTimes[.beforeStart] = sample.startedAt
       lastSnapshotTimes[.beforeEnd] = sample.finishedAt
@@ -461,21 +488,8 @@ private final class SnapshotLab {
 
   func timingChecks() throws {
     guard let monitor else { throw LabFailure.incomplete("missing-host") }
-    struct Manifest: Encodable {
-      let kind = "manifest"
-      let schema = 1
-      let os: String
-      let utc: String
-      let labHash: String
-      let fixtureHash: String
-      let attemptLimit = 64
-      let cohortLimit = 16
-      let eventLimit = 128
-      let outputLimit = 262144
-      let deadlineSeconds = 180
-      let readerSeconds = 5
-      let freshness = "unmeasured"
-      let failureProbe = "lastInvalidationAttemptInvalidPID"
+    guard FixtureTimingBudget.reservedBytes <= FixtureTimingBudget.outputBytes else {
+      throw LabFailure.incomplete("timing-output-reservation")
     }
     func hash(_ path: String) throws -> String {
       let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
@@ -490,14 +504,29 @@ private final class SnapshotLab {
       return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
     try timingCollector.append(
-      Manifest(
+      FixtureTimingManifest(
         os: ProcessInfo.processInfo.operatingSystemVersionString,
         utc: ISO8601DateFormatter().string(from: Date()),
         labHash: try hash(CommandLine.arguments[0]),
-        fixtureHash: try hash(child.executableURL!.path)))
+        fixtureHash: try hash(child.executableURL!.path), initialContext: monitor.host.context,
+        controlledExclusion: exclusionMode),
+      maximumBytes: FixtureTimingBudget.manifestBytes)
+    monitor.timingSink = { [weak self] event in
+      try? self?.timingCollector.event(event)
+    }
     let delays = [0.0, 0.05, 0.2, 0.5]
     for cohort in FixtureTimingCohort.allCases {
-      for offset in 0..<16 {
+      // Normalize only at declared cohort setup or recovery boundaries. These
+      // operations precede admission and are never retries of a measured pair.
+      try timingSetup()
+      for offset in 0..<FixtureTimingBudget.cohortAttempts[cohort.rawValue]! {
+        let phase: FixtureTimingPhase =
+          exclusionMode && cohort == .ordinary && offset == 0
+          ? .exclusion : FixtureTimingBudget.phase(cohort: cohort, offset: offset)
+        if phase == .exclusion { try command("tree-ordinary") }
+        if phase == .recovery || (exclusionMode && cohort == .ordinary && offset == 1) {
+          try timingSetup()
+        }
         guard ProcessInfo.processInfo.systemUptime < deadline, !monitor.overflow,
           !timingCollector.stopped
         else { throw LabFailure.incomplete("timing-bound") }
@@ -506,6 +535,7 @@ private final class SnapshotLab {
         var record = FixtureTimingRecord(
           index: index, cohort: cohort, requestedDelay: delay,
           run: monitor.host.context.expected.run)
+        record.phase = phase
         var drained = true
         do {
           let before: FixtureSafetySnapshot
@@ -515,16 +545,13 @@ private final class SnapshotLab {
           }
           for (point, time) in lastSnapshotTimes { record.mark(point, at: time) }
           record.request = before.request
-          record.beforeSequence = before.sequence
-          record.beforeState = before.value("stateRevision")
-          record.beforeRegistry = before.value("registryRevision")
+          record.before = before
+          record.mark(.hostAdmission, at: ProcessInfo.processInfo.systemUptime)
           try monitor.host.begin(request: before.request)
-          record.admittedRevocation = monitor.host.context.revocation
-          record.admittedEnvironment = monitor.host.context.environment
-          record.admittedActivation = monitor.host.context.activation
+          record.admitted = monitor.host.context
           let reader = OwnedAXIdentityReader()
           activeTimingReader = reader
-          let failureProbe = cohort == .invalidation && offset == 15
+          let failureProbe = phase == .failureProbe
           try reader.start(
             pid: failureProbe ? 0 : child.processIdentifier,
             dispatchDelay: cohort == .dispatch ? delay : 0)
@@ -551,7 +578,10 @@ private final class SnapshotLab {
             record.outcome = .failed
             guard failureProbe else { throw LabFailure.incomplete("timing-read-failure") }
           case .success(let ax):
-            if cohort == .invalidation && offset % 2 == 1 {
+            record.focused = ax.focused
+            record.axStart = ax.startedAt
+            record.axEnd = ax.finishedAt
+            if phase == .sheet {
               try command("native-sheet")
               try command("close-sheet")
             }
@@ -559,6 +589,7 @@ private final class SnapshotLab {
               .beforeSubmission: .afterSubmission, .beforeWrite: .afterWrite,
               .beforeStart: .afterStart, .beforeEnd: .afterEnd,
               .beforeReceipt: .afterReceipt, .beforeParse: .afterParse,
+              .beforeSelection: .afterSelection, .beforeParseEntry: .afterParseEntry,
             ]
             let after: FixtureSafetySnapshot
             do { after = try snapshot("timing-after", expecting: [:]) } catch {
@@ -570,12 +601,10 @@ private final class SnapshotLab {
             for (point, time) in lastSnapshotTimes {
               if let afterPoint = afterPoints[point] { record.mark(afterPoint, at: time) }
             }
-            record.afterSequence = after.sequence
-            record.afterState = after.value("stateRevision")
-            record.afterRegistry = after.value("registryRevision")
+            record.after = after
             let ready = ProcessInfo.processInfo.systemUptime
             record.mark(.inputsReady, at: ready)
-            if cohort == .invalidation && offset % 2 == 0 {
+            if phase == .pause {
               monitor.pause(true)
               monitor.pause(false)
             }
@@ -593,21 +622,17 @@ private final class SnapshotLab {
               request: before.request, before: before, focused: ax.focused,
               axStart: ax.startedAt, axEnd: ax.finishedAt, after: after, now: entry)
             record.mark(.assessmentExit, at: ProcessInfo.processInfo.systemUptime)
-            record.assessment = result.rawValue
+            record.assessment = result
             record.outcome =
               result == .historicalConsistent
               ? .completed
               : result == .contextRevoked ? .revoked : .rejected
-            if cohort == .invalidation {
-              guard result == .contextRevoked || result == .sourceChanged else {
-                throw LabFailure.incomplete("timing-invalidation-not-rejected")
-              }
-            }
+          // Retain unexpected outcomes. Terminal suitability distinguishes
+          // complete collection from passing episode/recovery acceptance.
           }
           let context = monitor.host.context
-          record.revocation = context.revocation
-          record.environment = context.environment
-          record.activation = context.activation
+          record.final = context
+          record.mark(.terminal, at: ProcessInfo.processInfo.systemUptime)
           try timingCollector.finish(record, readerDrained: drained)
           guard !timingCollector.stopped else { throw LabFailure.incomplete("timing-invalid") }
         } catch {
@@ -615,12 +640,24 @@ private final class SnapshotLab {
             if record.outcome != .timedOut && record.outcome != .failed {
               record.outcome = .incomplete
             }
+            record.final = monitor.host.context
+            record.mark(.terminal, at: ProcessInfo.processInfo.systemUptime)
             try? timingCollector.finish(record, readerDrained: drained)
           }
           throw error
         }
       }
     }
+  }
+
+  private func timingSetup() throws {
+    guard monitor?.host.pendingRequest == nil, activeTimingReader == nil else {
+      throw LabFailure.incomplete("timing-setup-occupied")
+    }
+    try command("close-sheet")
+    try activate()
+    let end = min(deadline, ProcessInfo.processInfo.systemUptime + 0.1)
+    while ProcessInfo.processInfo.systemUptime < end { pump() }
   }
 
   func exportTiming(orderly: Bool, passed: Bool) -> Bool {
@@ -632,13 +669,16 @@ private final class SnapshotLab {
       }
       activeTimingReader = nil
     }
-    try? timingCollector.append(FixtureTimingSummary(records: timingCollector.records))
+    try? timingCollector.append(
+      FixtureTimingSummary(records: timingCollector.records),
+      maximumBytes: FixtureTimingBudget.summaryBytes)
     let complete = passed && orderly && !timingCollector.stopped && timingCollector.occupied == nil
     timingCollector.close(orderly: orderly, passed: passed)
     do { try FileHandle.standardOutput.write(contentsOf: timingCollector.bytes) } catch {
       return false
     }
-    return complete
+    return complete && timingCollector.records.count == FixtureTimingBudget.attempts
+      && timingCollector.records.allSatisfy(\.expectedOutcome)
   }
 
   func cleanup() -> Bool {
@@ -677,8 +717,12 @@ private let permissionApp =
   && CommandLine.arguments.count == 1
 private let permissionMode =
   permissionApp || CommandLine.arguments == [CommandLine.arguments[0], "--permission-run"]
-private let timingMode = CommandLine.arguments == [CommandLine.arguments[0], "--timing-run"]
-private let lab = SnapshotLab(operatorMode: spaceMode || permissionMode, timingMode: timingMode)
+private let exclusionMode =
+  CommandLine.arguments == [CommandLine.arguments[0], "--timing-exclusion-run"]
+private let timingMode =
+  exclusionMode || CommandLine.arguments == [CommandLine.arguments[0], "--timing-run"]
+private let lab = SnapshotLab(
+  operatorMode: spaceMode || permissionMode, timingMode: timingMode, exclusionMode: exclusionMode)
 private var passed = false
 private var identityMode = false
 private let hostMode = CommandLine.arguments == [CommandLine.arguments[0], "--host-run"]
@@ -690,7 +734,7 @@ do {
     || CommandLine.arguments == [CommandLine.arguments[0], "--identity-run"]
   guard identityMode || CommandLine.arguments == [CommandLine.arguments[0], "--run"] else {
     throw LabFailure.incomplete(
-      "usage: iTileSafetySnapshotLab --run or --identity-run or --lifecycle-run or --host-run or --space-run or --permission-run or --timing-run"
+      "usage: iTileSafetySnapshotLab --run or --identity-run or --lifecycle-run or --host-run or --space-run or --permission-run or --timing-run or --timing-exclusion-run or --replay-timing FILE"
     )
   }
   if identityMode && !AXIsProcessTrusted() {

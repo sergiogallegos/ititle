@@ -2,39 +2,40 @@ import Foundation
 
 /// Laboratory timestamps only. Missing boundaries stay absent, including on timeout.
 public enum FixtureTimingPoint: String, CaseIterable, Sendable {
-  case beforeSubmission, beforeWrite, beforeStart, beforeEnd, beforeReceipt, beforeParse
+  case beforeSubmission, beforeWrite, beforeStart, beforeEnd, beforeReceipt, beforeSelection
+  case beforeParseEntry, beforeParse, hostAdmission
   case admission, entry, exit, publication, receipt
-  case afterSubmission, afterWrite, afterStart, afterEnd, afterReceipt, afterParse
-  case inputsReady, assessmentEntry, assessmentExit
+  case afterSubmission, afterWrite, afterStart, afterEnd, afterReceipt, afterSelection
+  case afterParseEntry, afterParse
+  case inputsReady, assessmentEntry, assessmentExit, terminal
 }
 
 public enum FixtureTimingOutcome: String, Codable, Sendable {
   case completed, rejected, revoked, failed, timedOut, incomplete, malformedTiming
 }
 
-public struct FixtureTimingRecord: Encodable, Sendable {
-  public let schema = 1
-  public let kind = "pair"
-  public let serial = 1
+public enum FixtureTimingPhase: String, Codable, Sendable {
+  case observation, pause, sheet, failureProbe, recovery, exclusion
+}
+
+public struct FixtureTimingRecord: Codable, Sendable {
+  public private(set) var schema = 2
+  public private(set) var kind = "pair"
   public let index: Int
   public let cohort: FixtureTimingCohort
   public let requestedDelay: Double
   public let run: UUID
+  public var phase: FixtureTimingPhase = .observation
   public var request: UInt64?
-  public var beforeSequence: UInt64?
-  public var afterSequence: UInt64?
-  public var beforeState: String?
-  public var afterState: String?
-  public var beforeRegistry: String?
-  public var afterRegistry: String?
-  public var admittedRevocation: UInt64?
-  public var admittedEnvironment: UInt64?
-  public var admittedActivation: UInt64?
-  public var revocation: UInt64?
-  public var environment: UInt64?
-  public var activation: UInt64?
+  public var before: FixtureSafetySnapshot?
+  public var after: FixtureSafetySnapshot?
+  public var admitted: FixtureUseContext?
+  public var final: FixtureUseContext?
+  public var focused: FixtureWindowIdentity?
+  public var axStart: Double?
+  public var axEnd: Double?
   public var outcome: FixtureTimingOutcome = .incomplete
-  public var assessment: String?
+  public var assessment: FixturePairResult?
   public private(set) var times: [String: Double] = [:]
 
   public init(index: Int, cohort: FixtureTimingCohort, requestedDelay: Double, run: UUID) {
@@ -51,17 +52,44 @@ public struct FixtureTimingRecord: Encodable, Sendable {
   public func time(_ point: FixtureTimingPoint) -> Double? { times[point.rawValue] }
 
   public var valid: Bool {
-    guard index > 0, index <= 64, requestedDelay.isFinite, requestedDelay >= 0,
+    guard schema == 2, kind == "pair", index > 0, index <= 64,
+      requestedDelay.isFinite, requestedDelay >= 0,
       requestedDelay <= 0.5,
       times.allSatisfy({ key, value in
         FixtureTimingPoint(rawValue: key) != nil && value.isFinite && value >= 0
       })
     else { return false }
+    for sample in [before, after].compactMap({ $0 }) {
+      guard sample.value("schema") == "2", sample.line.utf8.count <= 1280 else { return false }
+    }
+    for value in [axStart, axEnd].compactMap({ $0 }) {
+      guard value.isFinite, value >= 0 else { return false }
+    }
+    if let axStart, let axEnd {
+      guard axStart <= axEnd, axStart >= (time(.entry) ?? axStart),
+        axEnd <= (time(.exit) ?? axEnd)
+      else { return false }
+    }
+    if let before {
+      guard time(.beforeStart) == before.startedAt, time(.beforeEnd) == before.finishedAt else {
+        return false
+      }
+    }
+    if let after {
+      guard time(.afterStart) == after.startedAt, time(.afterEnd) == after.finishedAt else {
+        return false
+      }
+    }
+    if let terminal = time(.terminal), times.values.contains(where: { $0 > terminal }) {
+      return false
+    }
     let chains: [[FixtureTimingPoint]] = [
       [
-        .beforeSubmission, .beforeStart, .beforeEnd, .beforeReceipt, .beforeParse,
-        .admission, .entry, .exit, .publication, .receipt, .afterSubmission, .afterStart,
-        .afterEnd, .afterReceipt, .afterParse, .inputsReady, .assessmentEntry, .assessmentExit,
+        .beforeSubmission, .beforeStart, .beforeEnd, .beforeReceipt, .beforeSelection,
+        .beforeParseEntry, .beforeParse, .hostAdmission, .admission, .entry, .exit,
+        .publication, .receipt, .afterSubmission, .afterStart, .afterEnd, .afterReceipt,
+        .afterSelection, .afterParseEntry, .afterParse, .inputsReady, .assessmentEntry,
+        .assessmentExit, .terminal,
       ],
       [.beforeSubmission, .beforeStart, .beforeEnd, .beforeReceipt, .beforeParse],
       [.beforeSubmission, .beforeWrite, .beforeReceipt],
@@ -91,8 +119,12 @@ public struct FixtureTimingRecord: Encodable, Sendable {
       ("afterEndToEnd", .afterSubmission, .afterParse),
       ("beforeDelivery", .beforeEnd, .beforeReceipt),
       ("afterDelivery", .afterEnd, .afterReceipt),
-      ("beforeParsing", .beforeReceipt, .beforeParse),
-      ("afterParsing", .afterReceipt, .afterParse),
+      ("beforeReceiptToCompletion", .beforeReceipt, .beforeParse),
+      ("afterReceiptToCompletion", .afterReceipt, .afterParse),
+      ("beforeSelectionWait", .beforeReceipt, .beforeSelection),
+      ("afterSelectionWait", .afterReceipt, .afterSelection),
+      ("beforeParsing", .beforeParseEntry, .beforeParse),
+      ("afterParsing", .afterParseEntry, .afterParse),
       ("dispatchWait", .admission, .entry), ("inspection", .entry, .exit),
       ("publication", .exit, .publication), ("replyWait", .publication, .receipt),
       ("assessmentWait", .inputsReady, .assessmentEntry),
@@ -106,24 +138,54 @@ public struct FixtureTimingRecord: Encodable, Sendable {
         return (name, b - a)
       })
   }
+
+  public var expectedOutcome: Bool {
+    switch phase {
+    case .observation, .recovery: outcome == .completed && assessment == .historicalConsistent
+    case .pause: outcome == .revoked && assessment == .contextRevoked
+    case .sheet:
+      outcome == .rejected && assessment == .sourceChanged
+        || outcome == .revoked && assessment == .contextRevoked
+    case .failureProbe: outcome == .failed && assessment == nil
+    case .exclusion: outcome == .rejected && assessment == .unsupported
+    }
+  }
 }
 
 public enum FixtureTimingCohort: String, Codable, CaseIterable, Sendable {
   case ordinary, dispatch, assessment, invalidation
 }
 
-public struct FixtureTimingEvent: Encodable, Sendable {
-  public let kind = "event"
+public struct FixtureTimingEvent: Codable, Sendable {
+  public private(set) var kind = "event"
   public let code: String
   public let time: Double
   public let revocation: UInt64
   public let pending: UInt64?
+  public let context: FixtureUseContext?
 
-  public init(code: String, time: Double, revocation: UInt64, pending: UInt64?) {
+  public init(
+    code: String, time: Double, revocation: UInt64, pending: UInt64?,
+    context: FixtureUseContext? = nil
+  ) {
     self.code = code
     self.time = time
     self.revocation = revocation
     self.pending = pending
+    self.context = context
+  }
+
+  public var hostEvent: FixtureHostEvent? {
+    switch code {
+    case "activation": .activation
+    case "nativeSpace", "environment": .environment
+    case "ownedTermination", "sampledExit": .processExit
+    case "sampledTrustLost": .trust(false)
+    case "sampledTrustRestored": .trust(true)
+    case "pause": .pause(true)
+    case "resume": .pause(false)
+    default: nil
+    }
   }
 }
 
@@ -186,7 +248,7 @@ public struct FixtureTimingCollector: Sendable {
       occupied = nil
       pendingCohort = nil
     }
-    try append(terminal)
+    try append(terminal, maximumBytes: FixtureTimingBudget.pairBytes)
     if terminal.outcome == .timedOut || terminal.outcome == .incomplete { stopped = true }
   }
 
@@ -198,25 +260,22 @@ public struct FixtureTimingCollector: Sendable {
 
   public mutating func event(_ event: FixtureTimingEvent) throws {
     guard !stopped, eventCount < eventLimit, event.time.isFinite, event.time >= 0,
-      [
-        "activation", "nativeSpace", "environment", "ownedTermination", "sampledTrustLost",
-        "sampledTrustRestored", "sampledExit", "pause", "resume",
-      ].contains(event.code)
+      event.hostEvent != nil
     else {
       stopped = true
       throw Failure.bound
     }
     eventCount += 1
-    try append(event)
+    try append(event, maximumBytes: FixtureTimingBudget.eventBytes)
   }
 
-  public mutating func append<T: Encodable>(_ value: T) throws {
+  public mutating func append<T: Encodable>(_ value: T, maximumBytes: Int = 262_144) throws {
     guard !closed else { throw Failure.bound }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     var data = try encoder.encode(value)
     data.append(10)
-    guard bytes.count + data.count <= byteLimit - 512 else {
+    guard data.count <= maximumBytes, bytes.count + data.count <= byteLimit - 512 else {
       stopped = true
       throw Failure.bound
     }
@@ -233,10 +292,14 @@ public struct FixtureTimingCollector: Sendable {
       let complete: Bool
       let attempts: Int
       let occupied: Bool
+      let calibrationSuitable: Bool
     }
     let value = Terminal(
       orderly: orderly, complete: passed && orderly && !stopped && occupied == nil,
-      attempts: records.count, occupied: occupied != nil)
+      attempts: records.count, occupied: occupied != nil,
+      calibrationSuitable: passed && orderly && !stopped && occupied == nil
+        && records.count == FixtureTimingBudget.attempts && records.allSatisfy(\.expectedOutcome)
+        && !records.contains(where: { $0.phase == .exclusion }))
     if let data = try? JSONEncoder().encode(value) {
       bytes.append(data)
       bytes.append(10)
@@ -247,11 +310,11 @@ public struct FixtureTimingCollector: Sendable {
   public enum Failure: Error { case bound, mismatch }
 }
 
-public struct FixtureTimingSummary: Encodable, Sendable {
-  public let kind = "summary"
+public struct FixtureTimingSummary: Codable, Sendable {
+  public private(set) var kind = "summary"
   public let cohorts: [String: Cohort]
 
-  public struct Statistics: Encodable, Sendable {
+  public struct Statistics: Codable, Sendable {
     public let count: Int
     public let minimum: Double
     public let median: Double
@@ -259,7 +322,7 @@ public struct FixtureTimingSummary: Encodable, Sendable {
     public let maximum: Double
   }
 
-  public struct Cohort: Encodable, Sendable {
+  public struct Cohort: Codable, Sendable {
     public let attempts: Int
     public let outcomes: [String: Int]
     public let metrics: [String: Statistics]

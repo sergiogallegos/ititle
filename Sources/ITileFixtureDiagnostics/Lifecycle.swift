@@ -79,7 +79,7 @@ public struct FixtureLifecycleSource {
   }
 }
 
-public struct FixtureUseContext: Equatable, Sendable {
+public struct FixtureUseContext: Codable, Equatable, Sendable {
   public var expected: FixtureWindowIdentity
   public var environment: UInt64
   public var activation: UInt64
@@ -114,7 +114,7 @@ public struct FixtureDiagnosticAgePolicy: Equatable, Sendable {
   }
 }
 
-public enum FixturePairResult: String, Sendable {
+public enum FixturePairResult: String, Codable, Sendable {
   case historicalConsistent, diagnosticUnexpired, incomplete, wrongRun, wrongWindow, wrongRequest
   case stale, contextRevoked, sourceChanged, retired, malformed, unsupported, expired, wrongPolicy
 }

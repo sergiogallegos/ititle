@@ -69,7 +69,7 @@ final class LabLifecycleMonitor: NSObject {
       timingSink(
         FixtureTimingEvent(
           code: code, time: time, revocation: host.context.revocation,
-          pending: host.pendingRequest))
+          pending: host.pendingRequest, context: host.context))
       return
     }
     print(

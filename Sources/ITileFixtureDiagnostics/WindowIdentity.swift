@@ -1,7 +1,7 @@
 import Foundation
 
 /// Explicit fixture-controlled AX identifier. Never interpreted on a user app.
-public struct FixtureWindowIdentity: Equatable, Sendable {
+public struct FixtureWindowIdentity: Codable, Equatable, Sendable {
   public let run: UUID
   public let serial: UInt64
 
@@ -22,6 +22,15 @@ public struct FixtureWindowIdentity: Equatable, Sendable {
   }
 
   public var identifier: String { "itile-fixture-v1:\(run.uuidString):\(serial)" }
+
+  public init(from decoder: any Decoder) throws {
+    try self.init(identifier: decoder.singleValueContainer().decode(String.self))
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(identifier)
+  }
 
   public func matchesOriginal(in snapshot: FixtureSafetySnapshot) -> Bool {
     run == snapshot.run && String(serial) == snapshot.value("original")

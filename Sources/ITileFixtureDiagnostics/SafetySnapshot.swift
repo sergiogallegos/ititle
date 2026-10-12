@@ -5,7 +5,7 @@ public enum FixtureSnapshotError: Error {
   case malformed, unsupported, stale, context, pending, exhausted
 }
 
-public struct FixtureSafetySnapshot: Sendable {
+public struct FixtureSafetySnapshot: Codable, Sendable {
   public static let historicalKeys = [
     "schema", "coverage", "run", "request", "sequence", "start", "end", "original", "number",
     "active", "visible", "minimized", "fullscreen", "hidden", "frontmost", "key", "main",
@@ -38,6 +38,15 @@ public struct FixtureSafetySnapshot: Sendable {
   public let sequence: UInt64
   public let startedAt: Double
   public let finishedAt: Double
+
+  public init(from decoder: any Decoder) throws {
+    try self.init(line: decoder.singleValueContainer().decode(String.self))
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(line)
+  }
 
   public init(line: String) throws {
     guard line.utf8.count <= 4096, !line.contains("\n"), !line.contains("\r") else {
