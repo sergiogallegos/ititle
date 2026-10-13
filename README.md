@@ -2,7 +2,7 @@
 
 A minimal, keyboard-driven tiling companion for macOS. Built from scratch in Swift with zero third-party dependencies.
 
-**Status: M1 read-only probe implemented with partial manual validation; real window mutation remains gated. This is not yet a working window manager.** See the [offline diagnostic-age comparison and next task](docs/m2-fixture-age-comparison.md), [production boundary review](docs/m2-production-readiness.md) and [M1 readiness](docs/m1-readiness.md). The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
+**Status: M1 read-only probe implemented with partial manual validation; real window mutation remains gated. This is not yet a working window manager.** See the [diagnostic-age review and next task](docs/m2-fixture-age-review.md), [production boundary review](docs/m2-production-readiness.md) and [M1 readiness](docs/m1-readiness.md). The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
 
 The goal is a small tool that arranges ordinary windows predictably, responds quickly to commands, and yields gracefully when macOS or an application cannot cooperate. One menu-bar app, public APIs, SIP enabled, no external services.
 
@@ -105,6 +105,7 @@ docs/                   Product, architecture, decisions, and research
 - [M2.37 bounded setup records, first stop and schema-3 replay](docs/m2-fixture-setup-records.md)
 - [M2.38 schema-3 attribution review and offline diagnostic-policy scope](docs/m2-fixture-diagnostic-policy-scope.md)
 - [M2.39 bounded offline diagnostic-age comparison and retained results](docs/m2-fixture-age-comparison.md)
+- [M2.40 diagnostic-age usability review and acknowledgment-failure scope](docs/m2-fixture-age-review.md)
 - [Read-only probe usage and manual checks](docs/m1-probe.md)
 - [M1 readiness and M2.1 acceptance criteria](docs/m1-readiness.md)
 - [P3 delay/timeout lab](docs/p3-lab.md)

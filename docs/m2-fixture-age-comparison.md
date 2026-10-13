@@ -106,3 +106,7 @@ An independent temporary Swift audit recomputed each retained age/expiry, checke
 ## Next task
 
 M2.40 should review this comparison's diagnostic usability and limitations, including the different 500 ms results and primary rejections excluded from expiration counts. Keep every original unsuitable/incomplete/control flag and do not select a production age or repeat collection to favor a candidate. Explicitly scope any further fixture-only failure experiment or safety-provider work before implementation. Numerical selection and real mutation remain separate gates.
+
+## M2.40 follow-up
+
+[The diagnostic-age usability review](m2-fixture-age-review.md) completes that task, keeps all five candidates unselected and scopes M2.41's one-shot normalization acknowledgment delay. Source hashes/comparison results remain unchanged. The proposed fault experiment addresses a missing setup-response timeout boundary, not production freshness or safety-provider acceptance.
