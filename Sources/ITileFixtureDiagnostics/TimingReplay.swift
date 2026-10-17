@@ -36,6 +36,9 @@ public struct FixtureTimingManifest: Codable, Sendable {
   public let controlledSetupFailure: Bool?
   public let setupLimit: Int?
   public let summaryLimit: Int?
+  public let setupFault: FixtureSetupFault?
+  public let faultSeconds: Int?
+  public let responseSeconds: Int?
   public private(set) var cohortAttempts = FixtureTimingBudget.cohortAttempts
   public private(set) var attemptLimit = FixtureTimingBudget.attempts
   public private(set) var eventLimit = 128
@@ -50,7 +53,8 @@ public struct FixtureTimingManifest: Codable, Sendable {
   public init(
     os: String, utc: String, labHash: String, fixtureHash: String,
     initialContext: FixtureUseContext, controlledExclusion: Bool = false,
-    runStart: Double? = nil, collectionDeadline: Double? = nil, controlledSetupFailure: Bool? = nil
+    runStart: Double? = nil, collectionDeadline: Double? = nil, controlledSetupFailure: Bool? = nil,
+    setupFault: FixtureSetupFault? = nil
   ) {
     self.os = os
     self.utc = utc
@@ -61,9 +65,12 @@ public struct FixtureTimingManifest: Codable, Sendable {
     self.runStart = runStart
     self.collectionDeadline = collectionDeadline
     self.controlledSetupFailure = controlledSetupFailure
-    schema = runStart == nil ? 2 : 3
-    setupLimit = schema == 3 ? FixtureDiagnosticBudget.setupLimit : nil
-    summaryLimit = schema == 3 ? FixtureDiagnosticBudget.summaryBytes : nil
+    self.setupFault = setupFault
+    faultSeconds = setupFault == nil ? nil : 6
+    responseSeconds = setupFault == nil ? nil : 5
+    schema = setupFault != nil ? 4 : runStart == nil ? 2 : 3
+    setupLimit = schema >= 3 ? FixtureDiagnosticBudget.setupLimit : nil
+    summaryLimit = schema >= 3 ? FixtureDiagnosticBudget.summaryBytes(schema: schema) : nil
   }
 
   public var valid: Bool {
@@ -78,11 +85,25 @@ public struct FixtureTimingManifest: Codable, Sendable {
       versionValid =
         runStart == nil && collectionDeadline == nil && controlledSetupFailure == nil
         && setupLimit == nil && summaryLimit == nil
+        && setupFault == nil && faultSeconds == nil && responseSeconds == nil
     } else if schema == 3, let runStart, let collectionDeadline {
       versionValid =
         runStart.isFinite && runStart >= 0 && collectionDeadline.isFinite
         && collectionDeadline > runStart && collectionDeadline == runStart + 180
         && controlledSetupFailure != nil && setupLimit == 14 && summaryLimit == 15104
+        && setupFault == nil && faultSeconds == nil && responseSeconds == nil
+    } else if schema == 4, let runStart, let collectionDeadline {
+      versionValid =
+        runStart.isFinite && runStart >= 0 && collectionDeadline.isFinite
+        && collectionDeadline > runStart && collectionDeadline == runStart + 180
+        && controlledSetupFailure == true && !controlledExclusion && setupLimit == 14
+        && summaryLimit == 14592 && setupFault == .normalizationAckDelayOnce
+        && faultSeconds == 6 && responseSeconds == 5
+        && os.utf8.allSatisfy({ (32...126).contains($0) && ![34, 47, 92].contains($0) })
+        && utc.utf8.count == 20
+        && ISO8601DateFormatter().date(from: utc).map({
+          ISO8601DateFormatter().string(from: $0) == utc
+        }) == true
     } else {
       versionValid = false
     }
@@ -151,7 +172,9 @@ public enum FixtureTimingReplay {
     else { throw Failure.bound }
     let last = data.split(separator: 10).last!
     let terminal = try JSONSerialization.jsonObject(with: Data(last)) as? [String: Any]
-    if object["schema"] as? Int == 3 || terminal?["schema"] as? Int == 3 {
+    if [3, 4].contains(object["schema"] as? Int ?? 0)
+      || [3, 4].contains(terminal?["schema"] as? Int ?? 0)
+    {
       return try FixtureDiagnosticReplay.review(data)
     }
     return try reviewHistorical(data)

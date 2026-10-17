@@ -1,6 +1,8 @@
 # M2.40 — Diagnostic-age usability review and acknowledgment-failure scope
 
-**Status: offline comparison/source review complete; M2.41 below is proposed.** Reviews [M2.39's retained comparison](m2-fixture-age-comparison.md) after M2.38–M2.39 were committed and pushed as `86fc92c`. No candidate is selected, input recollected or production eligibility changed. The useful result is a bounded expiration comparison with preserved rejection precedence, rather than a freshness guarantee.
+**Status: offline comparison/source review complete; the original M2.41 proposal is retained below.** Reviews [M2.39's retained comparison](m2-fixture-age-comparison.md) after M2.38–M2.39 were committed and pushed as `86fc92c`. No candidate is selected, input recollected or production eligibility changed. The useful result is a bounded expiration comparison with preserved rejection precedence, rather than a freshness guarantee.
+
+The scoped follow-up is now implemented and recorded in [M2.41](m2-fixture-ack-delay.md). The proposed contract below remains the precollection declaration.
 
 ## Reviewed identities and accounting
 

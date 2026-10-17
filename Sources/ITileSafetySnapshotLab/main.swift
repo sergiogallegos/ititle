@@ -1,9 +1,12 @@
 import AppKit
 import ApplicationServices
-import CryptoKit
 import Darwin
 import Foundation
 import ITileFixtureDiagnostics
+
+if CommandLine.arguments == [CommandLine.arguments[0], "--timing-setup-ack-delay-preflight"] {
+  runSetupAckDelayPreflight()
+}
 
 if CommandLine.arguments.dropFirst().first == "--compare-diagnostic-ages" {
   runAgeComparison(arguments: CommandLine.arguments)
@@ -52,9 +55,9 @@ private final class SnapshotLab {
   private let timingMode: Bool
   private let exclusionMode: Bool
   private let setupExitMode: Bool
-  private var timingCollector = FixtureTimingCollector(
-    attemptLimit: FixtureTimingBudget.attempts, schema: 3,
-    failureClock: { ProcessInfo.processInfo.systemUptime })
+  private let setupAckDelayMode: Bool
+  private var timingCollector: FixtureTimingCollector
+  private var setupFault: FixtureSetupFaultRecord?
   private var activeSetup: FixtureSetupRecord?
   private var currentStage: FixtureLabStage = .trustPreflight
   private var correlatedRequest: UInt64 = 0
@@ -67,11 +70,15 @@ private final class SnapshotLab {
 
   init(
     operatorMode: Bool = false, timingMode: Bool = false, exclusionMode: Bool = false,
-    setupExitMode: Bool = false
+    setupExitMode: Bool = false, setupAckDelayMode: Bool = false
   ) {
     self.timingMode = timingMode
     self.exclusionMode = exclusionMode
     self.setupExitMode = setupExitMode
+    self.setupAckDelayMode = setupAckDelayMode
+    timingCollector = FixtureTimingCollector(
+      attemptLimit: FixtureTimingBudget.attempts, schema: setupAckDelayMode ? 4 : 3,
+      failureClock: { ProcessInfo.processInfo.systemUptime })
     runStart = ProcessInfo.processInfo.systemUptime
     deadline = runStart + (operatorMode || timingMode ? 180 : 30)
   }
@@ -100,6 +107,7 @@ private final class SnapshotLab {
       "--safety-probe", "--focused-probe", "--nested-probe", "--tab-probe", "--visibility-probe",
     ]
     if identityMode { child.arguments!.append("--identity-probe") }
+    if setupAckDelayMode { child.arguments!.append("--setup-ack-delay-probe") }
     child.standardInput = input
     child.standardOutput = output
     child.standardError = FileHandle.nullDevice
@@ -151,6 +159,7 @@ private final class SnapshotLab {
     let end = min(deadline, ProcessInfo.processInfo.systemUptime + 5)
     while ProcessInfo.processInfo.systemUptime < end {
       pump()
+      guard ProcessInfo.processInfo.systemUptime < end else { break }
       if let index = lines.firstIndex(where: { matching($0.text) }) {
         let line = lines.remove(at: index)
         lastReceipt = line.receipt
@@ -165,18 +174,25 @@ private final class SnapshotLab {
         guard count > 0 else { throw LabFailure.incomplete("child-eof") }
         buffer.append(contentsOf: bytes.prefix(count))
         guard buffer.count <= 8192 else { throw LabFailure.incomplete("line-bound") }
-        while let end = buffer.firstIndex(of: 10) {
-          let line = String(decoding: buffer[..<end], as: UTF8.self)
-          buffer.removeSubrange(...end)
+        while let lineEnd = buffer.firstIndex(of: 10) {
+          let line = String(decoding: buffer[..<lineEnd], as: UTF8.self)
+          buffer.removeSubrange(...lineEnd)
           received += 1
           guard received <= 512 else { throw LabFailure.incomplete("event-bound") }
           let receipt = ProcessInfo.processInfo.systemUptime
+          if setupAckDelayMode && line.hasPrefix("setup-ack-delay")
+            && timingCollector.firstStop == nil && receipt < end
+          {
+            guard setupFault != nil else { throw FixtureSetupFaultRecord.Failure.protocolFailure }
+            try setupFault!.observe(line, at: receipt)
+          }
           lines.append((line, receipt))
           log(line)
         }
       }
       Thread.sleep(forTimeInterval: 0.01)
     }
+    if !child.isRunning { throw LabFailure.incomplete("child-exited") }
     throw LabFailure.incomplete("event-deadline")
   }
 
@@ -512,32 +528,36 @@ private final class SnapshotLab {
   func timingChecks() throws {
     guard let monitor else { throw LabFailure.incomplete("missing-host") }
     setStage(.manifest)
-    guard FixtureDiagnosticBudget.reservedBytes <= FixtureTimingBudget.outputBytes else {
+    guard
+      FixtureDiagnosticBudget.reservedBytes(schema: setupAckDelayMode ? 4 : 3)
+        <= FixtureTimingBudget.outputBytes
+    else {
       throw LabFailure.incomplete("timing-output-reservation")
     }
-    func hash(_ path: String) throws -> String {
-      let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
-      defer { try? handle.close() }
-      var hash = SHA256()
-      var count = 0
-      while let data = try handle.read(upToCount: 65536), !data.isEmpty {
-        count += data.count
-        guard count <= 67_108_864 else { throw LabFailure.incomplete("artifact-bound") }
-        hash.update(data: data)
-      }
-      return hash.finalize().map { String(format: "%02x", $0) }.joined()
-    }
-    try timingCollector.append(
-      FixtureTimingManifest(
-        os: ProcessInfo.processInfo.operatingSystemVersionString,
-        utc: ISO8601DateFormatter().string(from: Date()),
-        labHash: try hash(CommandLine.arguments[0]),
-        fixtureHash: try hash(child.executableURL!.path), initialContext: monitor.host.context,
-        controlledExclusion: exclusionMode, runStart: runStart, collectionDeadline: deadline,
-        controlledSetupFailure: setupExitMode),
-      maximumBytes: FixtureDiagnosticBudget.manifestBytes)
+    let manifest = FixtureTimingManifest(
+      os: ProcessInfo.processInfo.operatingSystemVersionString,
+      utc: ISO8601DateFormatter().string(from: Date()),
+      labHash: try labArtifactHash(CommandLine.arguments[0]),
+      fixtureHash: try labArtifactHash(child.executableURL!.path),
+      initialContext: monitor.host.context,
+      controlledExclusion: exclusionMode, runStart: runStart, collectionDeadline: deadline,
+      controlledSetupFailure: setupExitMode || setupAckDelayMode,
+      setupFault: setupAckDelayMode ? .normalizationAckDelayOnce : nil)
+    guard manifest.valid else { throw FixtureSetupFaultRecord.Failure.protocolFailure }
+    try timingCollector.append(manifest, maximumBytes: FixtureDiagnosticBudget.manifestBytes)
     monitor.timingSink = { [weak self] event in
       try? self?.timingCollector.event(event)
+    }
+    if setupAckDelayMode {
+      // One arm command after the existing activation/baseline. Submission is
+      // distinct from the observed fixed arming and scheduling markers.
+      setupFault = FixtureSetupFaultRecord()
+      try setupFault!.submit(at: ProcessInfo.processInfo.systemUptime)
+      try send(FixtureAckDelayOnce.armCommand)
+      _ = try wait { $0.hasPrefix(FixtureAckDelayOnce.armedMarker + " ") }
+      try timingSetup(cohort: .ordinary, purpose: .cohort)
+      // The normalization step must stop before any pair or activation stage.
+      throw FixtureSetupFaultRecord.Failure.protocolFailure
     }
     if setupExitMode {
       setStage(.controlledExit)
@@ -707,8 +727,19 @@ private final class SnapshotLab {
         try setupStep(.exclusionWrite) { try send("tree-ordinary") }
         try setupStep(.exclusionAck) { _ = try wait { $0.hasPrefix("tree-ordinary-ready ") } }
       } else {
-        try setupStep(.normalizationWrite) { try send("close-sheet") }
-        try setupStep(.normalizationAck) { _ = try wait { $0.hasPrefix("close-sheet-ready ") } }
+        try setupStep(.normalizationWrite) {
+          if setupAckDelayMode {
+            try setupFault!.normalizationWrite(at: ProcessInfo.processInfo.systemUptime)
+          }
+          try send("close-sheet")
+        }
+        try setupStep(.normalizationAck) {
+          if setupAckDelayMode {
+            try setupFault!.beginWait(at: ProcessInfo.processInfo.systemUptime)
+          }
+          _ = try wait { $0.hasPrefix("close-sheet-ready ") }
+          if setupAckDelayMode { throw LabFailure.incomplete("unexpected-acknowledgment") }
+        }
         try setupStep(.activationWrite) { try send("activate") }
         try setupStep(.activationAck) { _ = try wait { $0.hasPrefix("activation-requested ") } }
         try setupStep(.activationConfirmation) {
@@ -768,6 +799,7 @@ private final class SnapshotLab {
       case "child-eof": category = .childEOF
       case "pipe-read": category = .pipeRead
       case "pipe-write": category = .pipeWrite
+      case "unexpected-acknowledgment": category = .unexpectedAcknowledgment
       case "timing-setup-occupied": category = .occupiedSetup
       case "timing-reader-deadline": category = .readerWatchdog
       case "timing-read-failure": category = .readerFailure
@@ -779,12 +811,19 @@ private final class SnapshotLab {
       case "line-bound", "event-bound", "pipe-configuration": category = .protocolFailure
       default: category = .unclassified
       }
+    } else if let error = error as? FixtureSetupFaultRecord.Failure {
+      category = error == .clockFailure ? .clockFailure : .protocolFailure
     } else if let error = error as? FixtureSnapshotError {
       category = error == .exhausted ? .counterFailure : .protocolFailure
     } else {
       category = .unclassified
     }
     stop(category)
+    if setupFault != nil, setupFault!.end == nil, let first = timingCollector.firstStop,
+      let time = first.time
+    {
+      try? setupFault!.finish(at: time, category: first.category, running: child.isRunning)
+    }
   }
 
   private func stop(_ category: FixtureStopCategory) {
@@ -807,9 +846,10 @@ private final class SnapshotLab {
       activeTimingReader = nil
     }
     setStage(.summary)
+    if let setupFault { try? timingCollector.setupFault(setupFault) }
     try? timingCollector.append(
       FixtureTimingSummary(records: timingCollector.records),
-      maximumBytes: FixtureDiagnosticBudget.summaryBytes)
+      maximumBytes: FixtureDiagnosticBudget.summaryBytes(schema: setupAckDelayMode ? 4 : 3))
     let complete = passed && orderly && !timingCollector.stopped && timingCollector.occupied == nil
     timingCollector.close(orderly: orderly, passed: passed)
     do { try FileHandle.standardOutput.write(contentsOf: timingCollector.bytes) } catch {
@@ -863,12 +903,14 @@ private let exclusionMode =
   CommandLine.arguments == [CommandLine.arguments[0], "--timing-exclusion-run"]
 private let setupExitMode =
   CommandLine.arguments == [CommandLine.arguments[0], "--timing-setup-exit-run"]
+private let setupAckDelayMode =
+  CommandLine.arguments == [CommandLine.arguments[0], "--timing-setup-ack-delay-run"]
 private let timingMode =
-  setupExitMode || exclusionMode
+  setupAckDelayMode || setupExitMode || exclusionMode
   || CommandLine.arguments == [CommandLine.arguments[0], "--timing-run"]
 private let lab = SnapshotLab(
   operatorMode: spaceMode || permissionMode, timingMode: timingMode, exclusionMode: exclusionMode,
-  setupExitMode: setupExitMode)
+  setupExitMode: setupExitMode, setupAckDelayMode: setupAckDelayMode)
 private var passed = false
 private var identityMode = false
 private let hostMode = CommandLine.arguments == [CommandLine.arguments[0], "--host-run"]
@@ -880,7 +922,7 @@ do {
     || CommandLine.arguments == [CommandLine.arguments[0], "--identity-run"]
   guard identityMode || CommandLine.arguments == [CommandLine.arguments[0], "--run"] else {
     throw LabFailure.incomplete(
-      "usage: iTileSafetySnapshotLab --run or --identity-run or --lifecycle-run or --host-run or --space-run or --permission-run or --timing-run or --timing-exclusion-run or --timing-setup-exit-run or --replay-timing FILE"
+      "usage: iTileSafetySnapshotLab --run or --identity-run or --lifecycle-run or --host-run or --space-run or --permission-run or --timing-run or --timing-exclusion-run or --timing-setup-exit-run or --timing-setup-ack-delay-run or --replay-timing FILE"
     )
   }
   if identityMode && !AXIsProcessTrusted() {

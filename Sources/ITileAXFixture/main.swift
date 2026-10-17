@@ -120,6 +120,10 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
   private var owned: [ObjectIdentifier: UInt64] = [:]
   private var safetyIssuer = FixtureSnapshotIssuer()
   private var safetyScenario = "ordinary"
+  private var setupAckDelay = FixtureAckDelayOnce(
+    enabled: CommandLine.arguments.contains("--setup-ack-delay-probe")
+      && CommandLine.arguments.contains("--safety-probe")
+      && CommandLine.arguments.contains("--nested-probe"))
   private var window: FixtureWindow?
   private var structuralNodes: [FixtureStructuralNode] = []
   private var sheet: NSWindow?
@@ -191,6 +195,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
         guard
           [
             "stall", "quit", "arm-focus-loss", "arm-window-stall", "activate",
+            FixtureAckDelayOnce.armCommand,
             "tree-ordinary", "tree-direct-sheet", "tree-nested-sheet", "tree-dialog",
             "tree-system-dialog", "tree-wide", "tree-deep", "tree-cycle", "tree-budget",
             "tree-focus-loss", "tree-focus-switch", "tree-stall", "tree-sheet-remove",
@@ -202,6 +207,12 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
           ].contains(command)
         else { continue }
         DispatchQueue.main.async { [weak self] in
+          if command == FixtureAckDelayOnce.armCommand {
+            if let marker = self?.setupAckDelay.arm(at: ProcessInfo.processInfo.systemUptime) {
+              FileHandle.standardOutput.write(Data((marker + "\n").utf8))
+            }
+            return
+          }
           if command != "desktop-status" { self?.lifecycle.transition() }
           if command == "quit" {
             NSApp.terminate(nil)
@@ -362,7 +373,17 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
     }
     safetyScenario = command
     state.stringValue = "Nested probe scenario: \(command)"
-    emitFixtureEvent(command + "-ready")
+    if command == "close-sheet",
+      let marker = setupAckDelay.deferAcknowledgment(
+        for: command, at: ProcessInfo.processInfo.systemUptime)
+    {
+      FileHandle.standardOutput.write(Data((marker + "\n").utf8))
+      DispatchQueue.main.asyncAfter(deadline: .now() + FixtureAckDelayOnce.seconds) {
+        emitFixtureEvent("close-sheet-ready")
+      }
+    } else {
+      emitFixtureEvent(command + "-ready")
+    }
   }
 
   @objc private func desktopChanged() {

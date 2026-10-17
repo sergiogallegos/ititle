@@ -2,7 +2,7 @@
 
 A minimal, keyboard-driven tiling companion for macOS. Built from scratch in Swift with zero third-party dependencies.
 
-**Status: M1 read-only probe implemented with partial manual validation; real window mutation remains gated. This is not yet a working window manager.** See the [diagnostic-age review and next task](docs/m2-fixture-age-review.md), [production boundary review](docs/m2-production-readiness.md) and [M1 readiness](docs/m1-readiness.md). The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
+**Status: M1 read-only probe implemented with partial manual validation; real window mutation remains gated. This is not yet a working window manager.** See the [fixture acknowledgment-timeout result and next review](docs/m2-fixture-ack-delay.md), [production boundary review](docs/m2-production-readiness.md) and [M1 readiness](docs/m1-readiness.md). The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
 
 The goal is a small tool that arranges ordinary windows predictably, responds quickly to commands, and yields gracefully when macOS or an application cannot cooperate. One menu-bar app, public APIs, SIP enabled, no external services.
 
@@ -15,6 +15,7 @@ The goal is a small tool that arranges ordinary windows predictably, responds qu
 - Acknowledged read-only replies through a shared bounded owner drain; workers remain occupied until consumption.
 - Bounded tracked-window registry synchronization on explicit replies, with stale/retired-token rejection and record retirement.
 - A menu-bar read-only probe with explicit per-application inspection, permission onboarding, pause, and Quit.
+- A separate one-shot fixture acknowledgment-delay control with bounded schema-4 setup/fault replay and a retained native timeout/cleanup check.
 - Separate laboratory-only schema-2 lifecycle snapshots and read-only pair assessment, with scoped tab/sheet reversal rejection, host event invalidation/recovery, scoped native desktop/permission acceptance and unmeasured freshness.
 - Historical focused-report provenance with fixed source/coverage/interval metadata and unmeasured freshness; scoped native inspection/blocked-preview acceptance is recorded; recovery coverage remains partial.
 - Explicit focused-window inspection and historical-token revalidation, with scoped focus-loss, mid-request permission-loss, desktop invalidation, and physical display hotplug checks. Eligibility remains unknown or ineligible.
@@ -106,6 +107,7 @@ docs/                   Product, architecture, decisions, and research
 - [M2.38 schema-3 attribution review and offline diagnostic-policy scope](docs/m2-fixture-diagnostic-policy-scope.md)
 - [M2.39 bounded offline diagnostic-age comparison and retained results](docs/m2-fixture-age-comparison.md)
 - [M2.40 diagnostic-age usability review and acknowledgment-failure scope](docs/m2-fixture-age-review.md)
+- [M2.41 one-shot fixture acknowledgment delay and native timeout](docs/m2-fixture-ack-delay.md)
 - [Read-only probe usage and manual checks](docs/m1-probe.md)
 - [M1 readiness and M2.1 acceptance criteria](docs/m1-readiness.md)
 - [P3 delay/timeout lab](docs/p3-lab.md)
