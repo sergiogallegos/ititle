@@ -174,11 +174,12 @@ public struct FixtureTimingEvent: Codable, Sendable {
   public let context: FixtureUseContext?
   public let direction: FixtureActivationDirection?
   public let relation: FixtureActivationRelation?
+  public let source: FixtureEnvironmentSource?
 
   public init(
     code: String, time: Double, revocation: UInt64, pending: UInt64?,
     context: FixtureUseContext? = nil, direction: FixtureActivationDirection? = nil,
-    relation: FixtureActivationRelation? = nil
+    relation: FixtureActivationRelation? = nil, source: FixtureEnvironmentSource? = nil
   ) {
     self.code = code
     self.time = time
@@ -187,6 +188,23 @@ public struct FixtureTimingEvent: Codable, Sendable {
     self.context = context
     self.direction = direction
     self.relation = relation
+    self.source = source
+  }
+
+  /// Historical envelopes must retain their original absence of source metadata.
+  public func hasValidMetadata(for schema: Int) -> Bool {
+    guard (2...6).contains(schema), hostEvent != nil else { return false }
+    if schema >= 3 {
+      guard
+        code == "activation"
+          ? direction != nil && relation != nil
+          : direction == nil && relation == nil
+      else { return false }
+    }
+    if schema >= 5 && (code == "nativeSpace" || code == "environment") {
+      return source?.eventCode == code
+    }
+    return source == nil
   }
 
   public var hostEvent: FixtureHostEvent? {
@@ -217,6 +235,7 @@ public struct FixtureTimingCollector: Sendable {
   private let failureClock: (@Sendable () -> Double)?
   private var counts: [FixtureTimingCohort: Int] = [:]
   private var eventCount = 0
+  private var lastEventTime = 0.0
   private var closed = false
   private var lastBoundary: Double = 0
   private var pendingCohort: FixtureTimingCohort?
@@ -238,7 +257,7 @@ public struct FixtureTimingCollector: Sendable {
   }
 
   public mutating func begin(_ cohort: FixtureTimingCohort) throws -> Int {
-    guard schema != 4, !stopped, occupied == nil, admissions < attemptLimit,
+    guard schema < 4, !stopped, occupied == nil, admissions < attemptLimit,
       counts[cohort, default: 0] < cohortLimit
     else {
       stopped = true
@@ -298,7 +317,13 @@ public struct FixtureTimingCollector: Sendable {
   }
 
   public mutating func setupFault(_ value: FixtureSetupFaultRecord) throws {
-    guard schema == 4, !faultRecorded, value.valid else { throw Failure.mismatch }
+    guard [4, 5].contains(schema), !faultRecorded, value.valid else { throw Failure.mismatch }
+    try append(value, maximumBytes: FixtureDiagnosticBudget.faultBytes)
+    faultRecorded = true
+  }
+
+  public mutating func setupFault(_ value: FixtureOutputEOFRecord) throws {
+    guard schema == 6, !faultRecorded, value.valid else { throw Failure.mismatch }
     try append(value, maximumBytes: FixtureDiagnosticBudget.faultBytes)
     faultRecorded = true
   }
@@ -310,22 +335,26 @@ public struct FixtureTimingCollector: Sendable {
   }
 
   public mutating func event(_ event: FixtureTimingEvent) throws {
-    guard !stopped, eventCount < eventLimit, event.time.isFinite, event.time >= 0,
-      event.hostEvent != nil
+    let clockValid =
+      event.time.isFinite && event.time >= 0
+      && (schema < 5 || event.time >= lastEventTime)
+    guard !stopped, eventCount < eventLimit, clockValid,
+      event.hasValidMetadata(for: schema)
     else {
       stopped = true
       latchStop(
         FixtureFirstStop(
           stage: .output,
-          category: !event.time.isFinite || event.time < 0
+          category: !clockValid
             ? .clockFailure
-            : event.hostEvent == nil ? .protocolFailure : .observerLimit,
+            : !event.hasValidMetadata(for: schema) ? .protocolFailure : .observerLimit,
           at: event.time,
           request: event.pending, pairs: records.count,
           pairOccupied: occupied != nil, readerOccupied: occupied != nil))
       throw Failure.bound
     }
     eventCount += 1
+    lastEventTime = event.time
     try append(event, maximumBytes: FixtureTimingBudget.eventBytes)
   }
 
@@ -360,7 +389,7 @@ public struct FixtureTimingCollector: Sendable {
   /// Reserved output survives a full record budget. No arbitrary strings or paths.
   public mutating func close(orderly: Bool, passed: Bool) {
     guard !closed else { return }
-    if schema >= 3 && firstStop == nil && (!passed || !orderly || stopped || schema == 4) {
+    if schema >= 3 && firstStop == nil && (!passed || !orderly || stopped || schema >= 4) {
       latchStop(
         FixtureFirstStop(
           stage: !orderly ? .cleanup : .output,

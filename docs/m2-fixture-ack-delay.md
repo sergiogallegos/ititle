@@ -2,6 +2,8 @@
 
 **Status: source implemented and verified; the single declared native acknowledgment-timeout check is recorded.** Implements [M2.40’s scoped fault experiment](m2-fixture-age-review.md) in the separate owned-fixture laboratory. The experiment tests setup transport diagnosis and cleanup. Production eligibility, numerical freshness policy and window mutation remain gated.
 
+The retained timeout, environment attribution limits and remaining failure coverage are now reviewed in [M2.42](m2-fixture-ack-review.md). Its source-only callback-attribution follow-up is implemented in [M2.43](m2-environment-source.md), without new native collection.
+
 ## Implemented boundary
 
 The lab’s `--timing-setup-ack-delay-run` uses timing envelope schema 4. After the existing successful activation and baseline snapshot it submits exactly one `arm-setup-ack-delay` command. The fixture requires `--setup-ack-delay-probe`, `--safety-probe` and `--nested-probe`; the fault is otherwise disabled. `FixtureAckDelayOnce` accepts one arm and consumes it only after the next actual close-sheet operation. It cannot rearm, even after consumption. Other commands, snapshots and quit keep their ordinary dispatch. A main-queue timer defers only `close-sheet-ready` by six seconds; it does not block the fixture’s main loop or delay the real sheet operation.

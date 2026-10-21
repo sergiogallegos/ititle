@@ -17,9 +17,15 @@ let package = Package(
     .executableTarget(name: "ITileApp", dependencies: ["ITileCore", "ITilePlatform"]),
     .executableTarget(name: "ITileP3Lab", dependencies: ["ITileCore", "ITilePlatform"]),
     .target(name: "ITileFixtureDiagnostics"),
-    .executableTarget(name: "ITileAXFixture", dependencies: ["ITileFixtureDiagnostics"]),
-    .executableTarget(name: "ITileSafetySnapshotLab", dependencies: ["ITileFixtureDiagnostics"]),
-    .testTarget(name: "ITileFixtureDiagnosticsTests", dependencies: ["ITileFixtureDiagnostics"]),
+    .target(name: "ITileFixtureTransport"),
+    .executableTarget(
+      name: "ITileAXFixture", dependencies: ["ITileFixtureDiagnostics", "ITileFixtureTransport"]),
+    .executableTarget(
+      name: "ITileSafetySnapshotLab",
+      dependencies: ["ITileFixtureDiagnostics", "ITileFixtureTransport"]),
+    .testTarget(
+      name: "ITileFixtureDiagnosticsTests",
+      dependencies: ["ITileFixtureDiagnostics", "ITileFixtureTransport"]),
     .testTarget(name: "ITileCoreTests", dependencies: ["ITileCore"]),
     .testTarget(name: "ITilePlatformTests", dependencies: ["ITilePlatform", "ITileCore"]),
   ]

@@ -2,6 +2,7 @@ import Foundation
 
 public enum FixtureSetupFault: String, Codable, Sendable {
   case normalizationAckDelayOnce
+  case normalizationOutputEOFOnce
 }
 
 /// Fixture-only state. A command cannot rearm this fault, even after consumption.
@@ -118,7 +119,9 @@ public struct FixtureSetupFaultRecord: Codable, Sendable {
   }
 
   public var valid: Bool {
-    guard kind == "setupFault", let end, let category, let running, end.isFinite, end >= 0 else {
+    guard kind == "setupFault", fault == .normalizationAckDelayOnce,
+      let end, let category, let running, end.isFinite, end >= 0
+    else {
       return false
     }
     var rebuilt = Self()
@@ -169,7 +172,7 @@ public struct FixtureSetupFaultRecord: Codable, Sendable {
   public enum Failure: Error { case protocolFailure, clockFailure }
 }
 
-/// Strict schema-4 validation; this controlled failure can never admit a pair.
+/// Schema-4/5 fault validation; this controlled failure can never admit a pair.
 enum FixtureSetupFaultReplay {
   static func validate(
     manifest: FixtureTimingManifest?, fault: FixtureSetupFaultRecord?,

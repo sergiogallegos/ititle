@@ -4,6 +4,8 @@ cd "$(dirname "$0")/.."
 xcrun swift-format lint --configuration .swift-format --strict --recursive Package.swift Sources Tests scripts/nested-lifecycle-lab.swift scripts/focus-recovery-lab.swift
 swift build
 swift test
+.build/debug/iTileSafetySnapshotLab --self-check-environment-sources
+.build/debug/iTileSafetySnapshotLab --self-check-output-eof
 plutil -lint Resources/Info.plist Resources/P3Lab-Info.plist Resources/AXFixture-Info.plist Resources/SafetyPermissionLab-Info.plist
 sh -n scripts/package-p3-lab scripts/package-ax-fixture scripts/package-safety-permission-lab
 sh -n scripts/format scripts/verify

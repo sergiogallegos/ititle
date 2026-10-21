@@ -1,5 +1,6 @@
 import AppKit
 import ITileFixtureDiagnostics
+import ITileFixtureTransport
 
 @MainActor
 private func emitFixtureEvent(_ event: String) {
@@ -122,8 +123,14 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
   private var safetyScenario = "ordinary"
   private var setupAckDelay = FixtureAckDelayOnce(
     enabled: CommandLine.arguments.contains("--setup-ack-delay-probe")
+      && !CommandLine.arguments.contains("--setup-output-eof-probe")
       && CommandLine.arguments.contains("--safety-probe")
       && CommandLine.arguments.contains("--nested-probe"))
+  private var setupOutputEOF = FixtureOutputEOFOnce(
+    enabled: CommandLine.arguments.contains("--setup-output-eof-probe"),
+    safety: CommandLine.arguments.contains("--safety-probe"),
+    nested: CommandLine.arguments.contains("--nested-probe"),
+    acknowledgmentDelay: CommandLine.arguments.contains("--setup-ack-delay-probe"))
   private var window: FixtureWindow?
   private var structuralNodes: [FixtureStructuralNode] = []
   private var sheet: NSWindow?
@@ -195,7 +202,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
         guard
           [
             "stall", "quit", "arm-focus-loss", "arm-window-stall", "activate",
-            FixtureAckDelayOnce.armCommand,
+            FixtureAckDelayOnce.armCommand, FixtureOutputEOFOnce.armCommand,
             "tree-ordinary", "tree-direct-sheet", "tree-nested-sheet", "tree-dialog",
             "tree-system-dialog", "tree-wide", "tree-deep", "tree-cycle", "tree-budget",
             "tree-focus-loss", "tree-focus-switch", "tree-stall", "tree-sheet-remove",
@@ -207,6 +214,12 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
           ].contains(command)
         else { continue }
         DispatchQueue.main.async { [weak self] in
+          if command == FixtureOutputEOFOnce.armCommand {
+            if let marker = self?.setupOutputEOF.arm(at: ProcessInfo.processInfo.systemUptime) {
+              FileHandle.standardOutput.write(Data((marker + "\n").utf8))
+            }
+            return
+          }
           if command == FixtureAckDelayOnce.armCommand {
             if let marker = self?.setupAckDelay.arm(at: ProcessInfo.processInfo.systemUptime) {
               FileHandle.standardOutput.write(Data((marker + "\n").utf8))
@@ -373,6 +386,13 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
     }
     safetyScenario = command
     state.stringValue = "Nested probe scenario: \(command)"
+    if let marker = setupOutputEOF.select(for: command, at: ProcessInfo.processInfo.systemUptime) {
+      FileHandle.standardOutput.write(Data((marker + "\n").utf8))
+      do { try FixtureOutputTransport.redirectToNull(STDOUT_FILENO) } catch {
+        emitFixtureEvent(FixtureOutputEOFOnce.failedMarker)
+      }
+      return
+    }
     if command == "close-sheet",
       let marker = setupAckDelay.deferAcknowledgment(
         for: command, at: ProcessInfo.processInfo.systemUptime)

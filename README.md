@@ -2,7 +2,7 @@
 
 A minimal, keyboard-driven tiling companion for macOS. Built from scratch in Swift with zero third-party dependencies.
 
-**Status: M1 read-only probe implemented with partial manual validation; real window mutation remains gated. This is not yet a working window manager.** See the [fixture acknowledgment-timeout result and next review](docs/m2-fixture-ack-delay.md), [production boundary review](docs/m2-production-readiness.md) and [M1 readiness](docs/m1-readiness.md). The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
+**Status: M1 read-only probe implemented with partial manual validation; real window mutation remains gated. This is not yet a working window manager.** See the [one-shot live-child EOF result](docs/m2-fixture-output-eof.md), [production boundary review](docs/m2-production-readiness.md) and [M1 readiness](docs/m1-readiness.md). The name is provisional; availability and trademarks have not been checked. Repository: [sergiogallegos/ititle](https://github.com/sergiogallegos/ititle).
 
 The goal is a small tool that arranges ordinary windows predictably, responds quickly to commands, and yields gracefully when macOS or an application cannot cooperate. One menu-bar app, public APIs, SIP enabled, no external services.
 
@@ -16,6 +16,8 @@ The goal is a small tool that arranges ordinary windows predictably, responds qu
 - Bounded tracked-window registry synchronization on explicit replies, with stale/retired-token rejection and record retirement.
 - A menu-bar read-only probe with explicit per-application inspection, permission onboarding, pause, and Quit.
 - A separate one-shot fixture acknowledgment-delay control with bounded schema-4 setup/fault replay and a retained native timeout/cleanup check.
+- Laboratory callback identity values, bounded schema-5 diagnostic replay and an inert AppKit mapping check; no native schema-5 collection mode.
+- A separate one-shot output-EOF control with bounded schema-6 replay, an inert descriptor check and a retained live-child EOF/cleanup result.
 - Separate laboratory-only schema-2 lifecycle snapshots and read-only pair assessment, with scoped tab/sheet reversal rejection, host event invalidation/recovery, scoped native desktop/permission acceptance and unmeasured freshness.
 - Historical focused-report provenance with fixed source/coverage/interval metadata and unmeasured freshness; scoped native inspection/blocked-preview acceptance is recorded; recovery coverage remains partial.
 - Explicit focused-window inspection and historical-token revalidation, with scoped focus-loss, mid-request permission-loss, desktop invalidation, and physical display hotplug checks. Eligibility remains unknown or ineligible.
@@ -55,6 +57,7 @@ Tests/ITilePlatformTests/ Worker lifecycle and fault-isolation tests
 Resources/              App bundle metadata
 config/                 Proposed configuration
 Sources/ITileFixtureDiagnostics/ Laboratory-only snapshot protocol
+Sources/ITileFixtureTransport/ Laboratory-only owned descriptor operations
 Sources/ITileSafetySnapshotLab/ Owned-process snapshot acceptance
 scripts/                Verify and package locally
 docs/                   Product, architecture, decisions, and research
@@ -108,6 +111,10 @@ docs/                   Product, architecture, decisions, and research
 - [M2.39 bounded offline diagnostic-age comparison and retained results](docs/m2-fixture-age-comparison.md)
 - [M2.40 diagnostic-age usability review and acknowledgment-failure scope](docs/m2-fixture-age-review.md)
 - [M2.41 one-shot fixture acknowledgment delay and native timeout](docs/m2-fixture-ack-delay.md)
+- [M2.42 timeout evidence review and callback-attribution scope](docs/m2-fixture-ack-review.md)
+- [M2.43 delivered callback identity and source-only verification](docs/m2-environment-source.md)
+- [M2.44 callback-attribution review and live-child EOF scope](docs/m2-environment-source-review.md)
+- [M2.45 one-shot owned-fixture output EOF and native result](docs/m2-fixture-output-eof.md)
 - [Read-only probe usage and manual checks](docs/m1-probe.md)
 - [M1 readiness and M2.1 acceptance criteria](docs/m1-readiness.md)
 - [P3 delay/timeout lab](docs/p3-lab.md)

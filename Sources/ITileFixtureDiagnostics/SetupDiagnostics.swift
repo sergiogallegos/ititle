@@ -179,14 +179,14 @@ public enum FixtureDiagnosticBudget {
   public static let closureBytes = 1024
   public static let reservedBytes = 28 * 6144 + 128 * 512 + 14 * 512 + 1280 + 15104 + 512 + 512
   public static let faultBytes = 512
-  public static func summaryBytes(schema: Int) -> Int { schema == 4 ? 14592 : summaryBytes }
+  public static func summaryBytes(schema: Int) -> Int { schema >= 4 ? 14592 : summaryBytes }
   public static func reservedBytes(schema: Int) -> Int {
     28 * 6144 + 128 * 512 + 14 * 512 + 1280 + summaryBytes(schema: schema)
-      + (schema == 4 ? faultBytes : 0) + closureBytes
+      + (schema >= 4 ? faultBytes : 0) + closureBytes
   }
 }
 
-/// Schema-3 diagnostics are checked before the unchanged schema-2 pair replay is used.
+/// Versioned diagnostics are checked before the unchanged schema-2 pair replay is used.
 public enum FixtureDiagnosticReplay {
   private struct Terminal: Codable {
     let kind: String
@@ -209,8 +209,8 @@ public enum FixtureDiagnosticReplay {
     let rows = data.split(separator: 10, omittingEmptySubsequences: false).dropLast()
     guard let last = rows.last,
       let terminalObject = try JSONSerialization.jsonObject(with: Data(last)) as? [String: Any],
-      let schema = terminalObject["schema"] as? Int, [3, 4].contains(schema),
-      rows.count <= (schema == 4 ? 175 : 174)
+      let schema = terminalObject["schema"] as? Int, [3, 4, 5, 6].contains(schema),
+      rows.count <= (schema >= 4 ? 175 : 174)
     else { throw Failure.bound }
     var manifest: FixtureTimingManifest?
     var records: [FixtureTimingRecord] = []
@@ -220,6 +220,7 @@ public enum FixtureDiagnosticReplay {
     var terminal: Terminal?
     var summary: Data?
     var fault: FixtureSetupFaultRecord?
+    var eofFault: FixtureOutputEOFRecord?
     var lastSetupEnd = 0.0
     var failedSetup = false
     for row in rows {
@@ -242,7 +243,7 @@ public enum FixtureDiagnosticReplay {
           bytes.count < FixtureDiagnosticBudget.setupBytes
         else { throw Failure.bound }
         let setup = try FixtureTimingReplay.decode(FixtureSetupRecord.self, data: bytes)
-        guard setup.valid, schema == 4 || setup.failure != .unexpectedAcknowledgment,
+        guard setup.valid, schema >= 4 || setup.failure != .unexpectedAcknowledgment,
           setup.sequence == setups.count + 1,
           setup.nextIndex == records.count + 1, setup.start >= lastSetupEnd,
           setup.start >= manifest.runStart!,
@@ -254,12 +255,18 @@ public enum FixtureDiagnosticReplay {
         lastSetupEnd = setup.end!
         failedSetup = setup.failure != nil
       case "setupFault":
-        guard schema == 4, manifest != nil, fault == nil, summary == nil,
+        guard schema >= 4, manifest != nil, fault == nil, eofFault == nil, summary == nil,
           bytes.count < FixtureDiagnosticBudget.faultBytes
         else { throw Failure.malformed }
-        let value = try FixtureTimingReplay.decode(FixtureSetupFaultRecord.self, data: bytes)
-        guard value.valid else { throw Failure.malformed }
-        fault = value
+        if schema == 6 {
+          let value = try FixtureTimingReplay.decode(FixtureOutputEOFRecord.self, data: bytes)
+          guard value.valid else { throw Failure.malformed }
+          eofFault = value
+        } else {
+          let value = try FixtureTimingReplay.decode(FixtureSetupFaultRecord.self, data: bytes)
+          guard value.valid else { throw Failure.malformed }
+          fault = value
+        }
       case "pair":
         guard schema == 3, manifest != nil, summary == nil, !failedSetup,
           bytes.count < FixtureTimingBudget.pairBytes
@@ -277,13 +284,11 @@ public enum FixtureDiagnosticReplay {
           bytes.count < FixtureTimingBudget.eventBytes
         else { throw Failure.bound }
         let event = try FixtureTimingReplay.decode(FixtureTimingEvent.self, data: bytes)
-        guard event.hostEvent != nil, event.context?.expected == manifest!.initialContext.expected,
+        guard event.hasValidMetadata(for: schema),
+          event.context?.expected == manifest!.initialContext.expected,
           event.revocation == event.context?.revocation, event.time.isFinite,
           event.time >= manifest!.runStart!,
-          events.last.map({ $0.time <= event.time }) ?? true,
-          event.code == "activation"
-            ? event.direction != nil && event.relation != nil
-            : event.direction == nil && event.relation == nil
+          events.last.map({ $0.time <= event.time }) ?? true
         else { throw Failure.malformed }
         events.append(event)
       case "summary":
@@ -299,7 +304,7 @@ public enum FixtureDiagnosticReplay {
       case "stop":
         guard stop == nil, bytes.count < 512 else { throw Failure.bound }
         let value = try FixtureTimingReplay.decode(FixtureFirstStop.self, data: bytes)
-        guard value.valid, schema == 4 || value.category != .unexpectedAcknowledgment,
+        guard value.valid, schema >= 4 || value.category != .unexpectedAcknowledgment,
           value.pairs <= records.count, records.count - value.pairs <= 1,
           value.setup == nil || value.setup == setups.last?.sequence
         else { throw Failure.malformed }
@@ -317,11 +322,19 @@ public enum FixtureDiagnosticReplay {
       !terminal.complete || (stop == nil && summary != nil && terminal.attempts == 28),
       terminal.complete || stop != nil
     else { throw Failure.malformed }
-    if schema == 4 {
+    if schema == 6 {
+      try FixtureOutputEOFReplay.validate(
+        manifest: manifest, fault: eofFault, setups: setups, stop: stop,
+        attempts: terminal.attempts, records: records.count, occupied: terminal.occupied,
+        complete: terminal.complete, suitable: terminal.calibrationSuitable)
+    } else if schema >= 4 {
       try FixtureSetupFaultReplay.validate(
         manifest: manifest, fault: fault, setups: setups, stop: stop,
         attempts: terminal.attempts, records: records.count, occupied: terminal.occupied,
         complete: terminal.complete, suitable: terminal.calibrationSuitable)
+    }
+    if schema >= 5, let time = stop?.time {
+      guard events.allSatisfy({ $0.time <= time }) else { throw Failure.mismatch }
     }
     if let failed = setups.last, let category = failed.failure {
       guard stop?.setup == failed.sequence, stop?.category == category,

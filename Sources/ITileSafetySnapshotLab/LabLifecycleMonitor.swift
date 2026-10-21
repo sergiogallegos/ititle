@@ -40,15 +40,12 @@ final class LabLifecycleMonitor: NSObject {
     center.addObserver(
       self, selector: #selector(termination),
       name: NSWorkspace.didTerminateApplicationNotification, object: nil)
-    for name in [
-      NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.willSleepNotification,
-      NSWorkspace.didWakeNotification,
-    ] {
+    for name in LabEnvironmentNotifications.workspaceNames {
       center.addObserver(self, selector: #selector(environment), name: name, object: nil)
     }
     NotificationCenter.default.addObserver(
       self, selector: #selector(environment),
-      name: NSApplication.didChangeScreenParametersNotification, object: nil)
+      name: LabEnvironmentNotifications.screenName, object: nil)
   }
 
   func detach() {
@@ -59,7 +56,7 @@ final class LabLifecycleMonitor: NSObject {
 
   private func record(
     _ event: FixtureHostEvent, code: String, direction: FixtureActivationDirection? = nil,
-    relation: FixtureActivationRelation? = nil
+    relation: FixtureActivationRelation? = nil, source: FixtureEnvironmentSource? = nil
   ) {
     guard !overflow else { return }
     guard events < 128 else {
@@ -75,11 +72,11 @@ final class LabLifecycleMonitor: NSObject {
         FixtureTimingEvent(
           code: code, time: time, revocation: host.context.revocation,
           pending: host.pendingRequest, context: host.context, direction: direction,
-          relation: relation))
+          relation: relation, source: source))
       return
     }
     print(
-      "lab-host-event code=\(code) revocation=\(host.context.revocation) pending=\(host.pendingRequest != nil) result=\(host.current.rawValue) time=\(ProcessInfo.processInfo.systemUptime)"
+      "lab-host-event code=\(code) source=\(source?.rawValue ?? "notApplicable") revocation=\(host.context.revocation) pending=\(host.pendingRequest != nil) result=\(host.current.rawValue) time=\(time)"
     )
   }
 
@@ -101,12 +98,9 @@ final class LabLifecycleMonitor: NSObject {
   }
 
   @objc private func environment(_ notification: Notification) {
-    if notification.name == NSWorkspace.activeSpaceDidChangeNotification {
-      if spaceEvents < 128 { spaceEvents += 1 }
-      record(.environment, code: "nativeSpace")
-    } else {
-      record(.environment, code: "environment")
-    }
+    guard let source = LabEnvironmentNotifications.source(for: notification.name) else { return }
+    if source == .nativeSpace && spaceEvents < 128 { spaceEvents += 1 }
+    record(.environment, code: source.eventCode, source: source)
   }
 
   @objc private func termination(_ notification: Notification) {
